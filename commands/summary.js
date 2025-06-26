@@ -137,16 +137,29 @@ const summaryCommand = async (ctx) => {
     let topUsers = cacheService.getUserCache(ctx.chat.id, 10);
     if (!topUsers) {
       const users = await messageStore.getTopUsers(ctx.chat.id, 10);
+      cacheService.setUserCache(ctx.chat.id, 10, users);
       topUsers = { users };
-      cacheService.setUserCache(ctx.chat.id, 10, topUsers);
     }
+
+    // 确保 topUsers.users 是数组
+    const usersList = Array.isArray(topUsers?.users) ? topUsers.users : [];
+    
+    logger.info('准备生成总结', {
+      chatId: ctx.chat.id,
+      messagesCount: messages.length,
+      topUsersCount: usersList.length,
+      dataType: typeof topUsers,
+      usersType: typeof topUsers?.users,
+      isUsersArray: Array.isArray(topUsers?.users),
+      firstUser: usersList[0] ? `${usersList[0].first_name || usersList[0].username || 'Unknown'}(${usersList[0].message_count})` : 'none'
+    });
 
     // 使用 Azure OpenAI 生成总结
     try {
       const summaryResult = await azureOpenAI.summarizeMessages(
         messages, 
         stats, 
-        topUsers.users || []
+        usersList
       );
 
       // 缓存总结结果
@@ -205,7 +218,7 @@ const summaryCommand = async (ctx) => {
 很抱歉，在生成总结时遇到了问题：
 ${error.message}
 
-请稍后再试，或联系管理员检查 Azure OpenAI 服务配置。`, {
+请稍后再试，或联系管理员检查 AI 服务配置。`, {
         message_id: processingMessage.message_id
       });
     }

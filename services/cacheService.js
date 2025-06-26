@@ -157,14 +157,14 @@ class CacheService {
    * 获取用户信息缓存
    * @param {number} chatId - 群组ID
    * @param {number} limit - 用户数量限制
-   * @returns {Array|null} 缓存的用户列表
+   * @returns {Object|null} 缓存的用户数据 - { users: Array, cached_at: number }
    */
   getUserCache(chatId, limit = 10) {
     const key = `users_${chatId}_${limit}`;
     const cached = this.userCache.get(key);
     
     if (cached) {
-      logger.info(`找到用户缓存: ${chatId} (top ${limit})`);
+      logger.info(`找到用户缓存: ${chatId} (top ${limit}, ${cached.users?.length || 0} 个用户)`);
       return cached;
     }
     
@@ -175,15 +175,19 @@ class CacheService {
    * 设置用户信息缓存
    * @param {number} chatId - 群组ID
    * @param {number} limit - 用户数量限制
-   * @param {Array} users - 用户列表
+   * @param {Array} users - 用户数组
    */
   setUserCache(chatId, limit, users) {
     const key = `users_${chatId}_${limit}`;
+    
+    // 确保 users 是数组
+    const userArray = Array.isArray(users) ? users : [];
+    
     this.userCache.set(key, {
-      users,
+      users: userArray,
       cached_at: Date.now()
     });
-    logger.success(`用户缓存已保存: ${chatId} (top ${limit})`);
+    logger.success(`用户缓存已保存: ${chatId} (top ${limit}, ${userArray.length} 个用户)`);
   }
 
   /**

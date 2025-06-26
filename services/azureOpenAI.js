@@ -147,6 +147,13 @@ class AzureOpenAIService {
     this.ensureInitialized();
 
     try {
+      logger.info('开始生成消息总结', {
+        messagesCount: messages.length,
+        topUsersType: typeof topUsers,
+        topUsersIsArray: Array.isArray(topUsers),
+        topUsersLength: Array.isArray(topUsers) ? topUsers.length : 'N/A'
+      });
+      
       // 检测群组主要语言
       const detectedLanguage = this.detectLanguage(messages);
 
@@ -177,8 +184,9 @@ class AzureOpenAIService {
       const maxTokens = 15000; // 保留足够的空间用于系统提示和回复
       const truncatedText = this.truncateToTokenLimit(fullText, maxTokens);
 
-      // 准备用户信息
-      const userInfo = topUsers.map(user => {
+      // 准备用户信息（确保 topUsers 是数组）
+      const validTopUsers = Array.isArray(topUsers) ? topUsers : [];
+      const userInfo = validTopUsers.map(user => {
         const name = user.first_name || user.username || `用户${user.user_id}`;
         return `${name} (${user.message_count}条消息)`;
       }).join(', ');
@@ -219,7 +227,7 @@ class AzureOpenAIService {
             earliest: stats.earliest_message,
             latest: stats.latest_message
           },
-          topUsers: topUsers.slice(0, 5),
+          topUsers: validTopUsers.slice(0, 5),
           tokensUsed: response.usage?.total_tokens || 0
         }
       };

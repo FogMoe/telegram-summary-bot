@@ -93,7 +93,7 @@ npm run dev
 
 如需在生产环境中部署，推荐使用 PM2 进程管理器：
 
-**[📖 PM2 部署教程](PM2-DEPLOYMENT.md)** - 完整的生产环境部署指南
+**[📖 PM2 部署教程](docs/PM2-DEPLOYMENT.md)** - 完整的生产环境部署指南
 
 快速启动生产环境：
 
@@ -108,6 +108,10 @@ pm2 start ecosystem.config.js
 pm2 startup
 pm2 save
 ```
+
+## 📚 完整文档
+
+查看完整的项目文档，请访问：**[📁 docs 文件夹](docs/)**
 
 ## 📁 项目结构
 
@@ -250,7 +254,7 @@ module.exports = {
 - 📝 **机器人会记录用户活动**，请遵守相关隐私法规
 
 ### 部署建议
-- 🚀 **生产环境**推荐使用 PM2 等进程管理器 → [查看 PM2 部署教程](PM2-DEPLOYMENT.md)
+- 🚀 **生产环境**推荐使用 PM2 等进程管理器 → [查看 PM2 部署教程](docs/PM2-DEPLOYMENT.md)
 - 🔄 **定期备份**重要的聊天数据
 - 📊 **监控 API 使用量**，避免超出配额
 
@@ -283,7 +287,7 @@ module.exports = {
 
 ## 🤝 贡献
 
-我们欢迎所有形式的贡献！请查看 [贡献指南](CONTRIBUTING.md) 了解如何参与项目开发。
+我们欢迎所有形式的贡献！请查看 [贡献指南](docs/CONTRIBUTING.md) 了解如何参与项目开发。
 
 - 🐛 [报告问题](https://github.com/FogMoe/telegram-summary-bot/issues)
 - 💡 [提交功能请求](https://github.com/FogMoe/telegram-summary-bot/issues)

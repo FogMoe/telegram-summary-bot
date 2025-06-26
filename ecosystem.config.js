@@ -48,7 +48,7 @@ module.exports = {
       user: 'deploy',
       host: 'your-server.com',
       ref: 'origin/main',
-      repo: 'https://github.com/your-username/telegram-summary-bot.git',
+      repo: 'https://github.com/FogMoe/telegram-summary-bot',
       path: '/var/www/telegram-summary-bot',
       'post-deploy': 'npm install --production && pm2 reload ecosystem.config.js --env production',
       env: {
