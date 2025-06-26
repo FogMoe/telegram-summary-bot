@@ -86,6 +86,9 @@ async function startBot() {
     // 初始化服务
     await initializeServices();
     
+    // 获取并记录bot信息
+    await setupBotInfo();
+    
     // 注册中间件
     registerMiddleware();
     
@@ -104,6 +107,29 @@ async function startBot() {
   } catch (error) {
     logger.error('机器人启动失败', error);
     process.exit(1);
+  }
+}
+
+// 设置bot信息
+async function setupBotInfo() {
+  try {
+    const botInfo = await bot.telegram.getMe();
+    
+    // 将bot信息存储到bot实例中，确保在所有上下文中可用
+    bot.botInfo = botInfo;
+    
+    logger.success('Bot信息获取成功', {
+      id: botInfo.id,
+      username: botInfo.username,
+      firstName: botInfo.first_name,
+      isBot: botInfo.is_bot
+    });
+    
+    logger.info(`Bot过滤已启用，将自动过滤Bot ID: ${botInfo.id} 发送的消息`);
+    
+  } catch (error) {
+    logger.error('获取bot信息失败', error);
+    throw error;
   }
 }
 

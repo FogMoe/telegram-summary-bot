@@ -8,20 +8,41 @@ const logger = require('../utils/logger');
 
 /**
  * 消息存储中间件
- * 监听所有文本消息并存储群组消息
+ * 监听所有文本消息并存储群组消息（过滤bot自身消息）
  */
 const messageStoreMiddleware = async (ctx, next) => {
   try {
     // 只处理文本消息
     if (ctx.message && ctx.message.text) {
+      // 获取bot信息（优先使用上下文中的，其次使用bot实例中的）
+      const botId = ctx.botInfo?.id || ctx.telegram?.options?.username || null;
+      const senderId = ctx.message.from?.id;
+      
+      // 过滤掉bot自己发送的消息，防止"总结套娃"
+      if (botId && senderId && senderId === botId) {
+        logger.info('过滤bot自身消息', {
+          messageId: ctx.message.message_id,
+          chatId: ctx.message.chat.id,
+          botId: botId,
+          senderId: senderId,
+          messagePreview: ctx.message.text.length > 50 
+            ? ctx.message.text.substring(0, 50) + '...' 
+            : ctx.message.text
+        });
+        
+        // 继续处理下一个中间件，但不存储消息
+        return next();
+      }
+      
       // 异步存储消息（不阻塞消息处理）
       setImmediate(async () => {
         try {
-          await messageStore.storeMessage(ctx.message);
+          await messageStore.storeMessage(ctx.message, botId);
         } catch (error) {
           logger.error('存储消息失败', {
             messageId: ctx.message.message_id,
             chatId: ctx.message.chat.id,
+            senderId: senderId,
             error: error.message
           });
         }

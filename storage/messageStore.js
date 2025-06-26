@@ -77,10 +77,23 @@ class MessageStore {
   /**
    * 存储消息
    * @param {Object} message - Telegram 消息对象
+   * @param {number} botId - Bot的用户ID（可选，用于过滤bot消息）
    */
-  async storeMessage(message) {
+  async storeMessage(message, botId = null) {
+    // 基础过滤条件
     if (!message.text || !message.chat || message.chat.type === 'private') {
       return; // 只存储群组的文本消息
+    }
+
+    // 过滤bot自身消息（双重保险）
+    if (botId && message.from?.id === botId) {
+      logger.debug('MessageStore: 过滤bot自身消息', {
+        messageId: message.message_id,
+        chatId: message.chat.id,
+        botId: botId,
+        senderId: message.from.id
+      });
+      return; // 不存储bot自己的消息
     }
 
     const sql = `
@@ -106,6 +119,15 @@ class MessageStore {
           logger.error('存储消息失败', err);
           reject(err);
         } else {
+          // 记录成功存储的消息
+          if (this.lastID) {
+            logger.debug('消息存储成功', {
+              messageId: message.message_id,
+              chatId: message.chat.id,
+              userId: message.from.id,
+              dbId: this.lastID
+            });
+          }
           resolve(this.lastID);
         }
       });
