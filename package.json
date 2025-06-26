@@ -1,0 +1,44 @@
+{
+  "name": "telegram-summary-bot",
+  "version": "1.0.0",
+  "description": "智能的 Telegram 群组聊天总结机器人，支持多语言自动检测和管理员权限控制，基于 Azure OpenAI 技术构建",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node bot.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "verify": "node scripts/verify-config.js",
+    "clean": "rm -rf storage/messages.db",
+    "reset": "npm run clean && npm start"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FogMoe/telegram-summary-bot.git"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "summary",
+    "openai",
+    "azure",
+    "ai",
+    "chat",
+    "group",
+    "analysis",
+    "multilingual"
+  ],
+  "author": "ScarletKc",
+  "license": "GPL-3.0",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/FogMoe/telegram-summary-bot/issues"
+  },
+  "homepage": "https://github.com/FogMoe/telegram-summary-bot#readme",
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "node-cache": "^5.1.2",
+    "openai": "^5.8.0",
+    "sqlite3": "^5.1.7",
+    "telegraf": "^4.16.3"
+  }
+}
