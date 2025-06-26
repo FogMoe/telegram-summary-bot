@@ -158,6 +158,21 @@ class AzureOpenAIService {
 
       const fullText = messageTexts.join('\n');
       
+      // 检查消息记录是否过长（超过 50k 字符）
+      if (fullText.length > 50000) {
+        logger.warn('消息记录超过长度限制', {
+          textLength: fullText.length,
+          maxLength: 50000,
+          messagesCount: messages.length
+        });
+        
+        const error = new Error('消息记录过长，请减少消息数量');
+        error.name = 'MessageTooLongError';
+        error.textLength = fullText.length;
+        error.maxLength = 50000;
+        throw error;
+      }
+      
       // 如果消息太长，进行截断
       const maxTokens = 15000; // 保留足够的空间用于系统提示和回复
       const truncatedText = this.truncateToTokenLimit(fullText, maxTokens);

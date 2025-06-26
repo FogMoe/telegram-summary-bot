@@ -96,6 +96,6 @@ utils/        - 工具函数
 如果您在贡献过程中遇到问题：
 - 查看现有的 [Issues](https://github.com/FogMoe/telegram-summary-bot/issues)
 - 在 GitHub 上创建新的 Issue
-- 联系项目维护者 @ScarletKc
+- 联系项目维护者 [@ScarletKc](https://github.com/scarletkc)
 
 感谢您的贡献！🎉 

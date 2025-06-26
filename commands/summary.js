@@ -169,6 +169,37 @@ const summaryCommand = async (ctx) => {
     } catch (error) {
       logger.error('生成总结失败', error);
       
+      // 检查是否是消息过长错误
+      if (error.name === 'MessageTooLongError') {
+        const currentChars = error.textLength;
+        const maxChars = error.maxLength;
+        const suggestedCount = Math.floor(messageCount * (maxChars / currentChars));
+        
+        logger.info('用户请求的消息记录过长', {
+          chatId: ctx.chat.id,
+          userId: ctx.from.id,
+          requestedCount: messageCount,
+          actualLength: currentChars,
+          suggestedCount: suggestedCount
+        });
+        
+        return ctx.editMessageText(`⚠️ 消息记录过长
+
+📏 当前消息长度：${currentChars.toLocaleString()} 字符
+📏 最大允许长度：${maxChars.toLocaleString()} 字符
+
+💡 建议解决方案：
+• 减少消息数量到 ${suggestedCount} 条左右
+• 或者选择更短的时间范围进行总结
+
+🔄 请重新执行命令：
+/summary ${suggestedCount}
+
+这样可以确保总结功能正常工作。`, {
+          message_id: processingMessage.message_id
+        });
+      }
+      
       return ctx.editMessageText(`❌ 总结生成失败
 
 很抱歉，在生成总结时遇到了问题：
