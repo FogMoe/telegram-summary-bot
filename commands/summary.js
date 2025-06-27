@@ -111,10 +111,36 @@ const summaryCommand = async (ctx) => {
         messageCount: messageCount,
         userId: ctx.from.id
       });
-      return ctx.editMessageText(formatSummaryResponse(cached, messageCount, true), {
-        message_id: processingMessage.message_id,
-        parse_mode: 'Markdown'
-      });
+      
+      // 发送缓存的总结结果（带错误处理）
+      try {
+        return await ctx.editMessageText(formatSummaryResponse(cached, messageCount, true), {
+          message_id: processingMessage.message_id,
+          parse_mode: 'Markdown'
+        });
+      } catch (markdownError) {
+        // 如果是Markdown格式错误，尝试使用纯文本
+        if (markdownError.response && 
+            markdownError.response.error_code === 400 && 
+            markdownError.response.description && 
+            markdownError.response.description.includes("can't parse entities")) {
+          
+          logger.warn('缓存消息Markdown格式错误，尝试使用纯文本发送', {
+            chatId: ctx.chat.id,
+            error: markdownError.response.description
+          });
+          
+          // 转换为纯文本格式
+          const plainTextResponse = formatPlainTextResponse(cached, messageCount, true);
+          
+          return await ctx.editMessageText(plainTextResponse, {
+            message_id: processingMessage.message_id
+          });
+        }
+        
+        // 如果不是Markdown格式错误，重新抛出
+        throw markdownError;
+      }
     }
 
     // 获取最近消息
@@ -171,14 +197,38 @@ const summaryCommand = async (ctx) => {
         summaryResult
       );
 
-      // 发送总结结果
-      return ctx.editMessageText(
-        formatSummaryResponse(summaryResult, messageCount, false), 
-        {
-          message_id: processingMessage.message_id,
-          parse_mode: 'Markdown'
+      // 发送总结结果（带错误处理）
+      try {
+        return await ctx.editMessageText(
+          formatSummaryResponse(summaryResult, messageCount, false), 
+          {
+            message_id: processingMessage.message_id,
+            parse_mode: 'Markdown'
+          }
+        );
+      } catch (markdownError) {
+        // 如果是Markdown格式错误，尝试使用纯文本
+        if (markdownError.response && 
+            markdownError.response.error_code === 400 && 
+            markdownError.response.description && 
+            markdownError.response.description.includes("can't parse entities")) {
+          
+          logger.warn('Markdown格式错误，尝试使用纯文本发送', {
+            chatId: ctx.chat.id,
+            error: markdownError.response.description
+          });
+          
+          // 转换为纯文本格式
+          const plainTextResponse = formatPlainTextResponse(summaryResult, messageCount, false);
+          
+          return await ctx.editMessageText(plainTextResponse, {
+            message_id: processingMessage.message_id
+          });
         }
-      );
+        
+        // 如果不是Markdown格式错误，重新抛出
+        throw markdownError;
+      }
 
     } catch (error) {
       logger.error('生成总结失败', error);
@@ -270,6 +320,56 @@ function formatSummaryResponse(summaryResult, messageCount, fromCache) {
   // 缓存标识
   if (fromCache) {
     response += `\n💾 *此结果来自缓存*`;
+  }
+  
+  response += `\n\n⏰ 下次总结请等待5分钟冷却期`;
+  
+  return response;
+}
+
+/**
+ * 格式化纯文本响应消息（无Markdown格式）
+ */
+function formatPlainTextResponse(summaryResult, messageCount, fromCache) {
+  const { summary, metadata } = summaryResult;
+  
+  let response = `📋 群组聊天总结\n\n`;
+  
+  // 移除summary中的所有Markdown标记
+  const plainSummary = summary
+    .replace(/\*/g, '')  // 移除星号
+    .replace(/\_/g, '')  // 移除下划线
+    .replace(/\`/g, '')  // 移除反引号
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')  // 移除链接格式，保留文本
+    .replace(/\#\#\#\#?\s/g, '')  // 移除标题标记
+    .replace(/\>/g, '');  // 移除引用标记
+  
+  response += `${plainSummary}\n\n`;
+  
+  // 元数据信息
+  response += `📊 分析统计\n`;
+  response += `• 分析消息：${metadata.messagesAnalyzed} 条\n`;
+  response += `• 参与用户：${metadata.uniqueUsers} 人\n`;
+  
+  if (metadata.timeRange) {
+    const startTime = new Date(metadata.timeRange.earliest * 1000).toLocaleDateString('zh-CN');
+    const endTime = new Date(metadata.timeRange.latest * 1000).toLocaleDateString('zh-CN');
+    response += `• 时间范围：${startTime} - ${endTime}\n`;
+  }
+  
+  if (metadata.topUsers && metadata.topUsers.length > 0) {
+    response += `• 活跃用户：${metadata.topUsers.slice(0, 3).map(u => 
+      u.first_name || u.username || `用户${u.user_id}`
+    ).join(', ')}\n`;
+  }
+  
+  if (metadata.tokensUsed) {
+    response += `• API 用量：${metadata.tokensUsed} tokens\n`;
+  }
+  
+  // 缓存标识
+  if (fromCache) {
+    response += `\n💾 此结果来自缓存`;
   }
   
   response += `\n\n⏰ 下次总结请等待5分钟冷却期`;
