@@ -85,15 +85,30 @@ class CacheService {
       latestMessageDate
     });
 
+    logger.debug('查找总结缓存', {
+      chatId,
+      messageCount,
+      latestMessageDate,
+      cacheKey: key,
+      availableKeys: this.summaryCache.keys()
+    });
+
     const cached = this.summaryCache.get(key);
     if (cached) {
-      logger.info(`找到总结缓存: ${chatId} (${messageCount}条消息)`);
+      logger.info(`找到总结缓存: ${chatId} (${messageCount}条消息)`, {
+        cacheKey: key,
+        cachedAt: cached.cached_at ? new Date(cached.cached_at).toISOString() : 'unknown'
+      });
       return {
         ...cached,
         fromCache: true
       };
     }
 
+    logger.info(`未找到总结缓存: ${chatId} (${messageCount}条消息)`, {
+      searchKey: key,
+      availableKeys: this.summaryCache.keys().length
+    });
     return null;
   }
 
@@ -209,9 +224,20 @@ class CacheService {
       return false;
     }
     
-    // 记录本次请求时间
-    this.userCache.set(key, now, 10 * 60); // 10分钟过期
+    logger.info(`API 请求频率检查通过: 用户${userId} 在群组${chatId}`);
     return true;
+  }
+
+  /**
+   * 标记API请求开始（只有在真正开始处理时才调用）
+   * @param {number} chatId - 群组ID
+   * @param {number} userId - 用户ID
+   */
+  markAPIRequestStarted(chatId, userId) {
+    const key = `api_limit_${chatId}_${userId}`;
+    const now = Date.now();
+    this.userCache.set(key, now, 10 * 60); // 10分钟过期
+    logger.info(`API 请求已标记开始: 用户${userId} 在群组${chatId}`);
   }
 
   /**

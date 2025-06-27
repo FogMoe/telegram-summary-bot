@@ -7,6 +7,7 @@ const messageStore = require('../storage/messageStore');
 const azureOpenAI = require('../services/azureOpenAI');
 const cacheService = require('../services/cacheService');
 const logger = require('../utils/logger');
+const { validateNumber, sanitizeInput } = require('../middleware/inputValidation');
 
 const summaryCommand = async (ctx) => {
   try {
@@ -37,12 +38,12 @@ const summaryCommand = async (ctx) => {
     }
 
     // 解析消息数量参数
-    const payload = ctx.payload?.trim();
+    const payload = sanitizeInput(ctx.payload?.trim() || '');
     let messageCount = 100; // 默认100条消息
 
     if (payload) {
-      const parsed = parseInt(payload);
-      if (isNaN(parsed)) {
+      const parsed = validateNumber(payload, 1, 1000);
+      if (parsed === null) {
         return ctx.reply(`❌ 参数错误！请输入有效的数字。
 
 📝 正确格式：
@@ -52,14 +53,6 @@ const summaryCommand = async (ctx) => {
 
 💬 示例：
 /summary 100 - 总结最近100条消息`);
-      }
-
-      if (parsed < 1 || parsed > 1000) {
-        return ctx.reply(`❌ 消息数量超出范围！
-
-🔢 有效范围：1-1000条消息
-
-请输入 1 到 1000 之间的数字。`);
       }
 
       messageCount = parsed;
@@ -113,6 +106,11 @@ const summaryCommand = async (ctx) => {
     );
 
     if (cached) {
+      logger.info('使用缓存的总结结果', {
+        chatId: ctx.chat.id,
+        messageCount: messageCount,
+        userId: ctx.from.id
+      });
       return ctx.editMessageText(formatSummaryResponse(cached, messageCount, true), {
         message_id: processingMessage.message_id,
         parse_mode: 'Markdown'
@@ -153,6 +151,9 @@ const summaryCommand = async (ctx) => {
       isUsersArray: Array.isArray(topUsers?.users),
       firstUser: usersList[0] ? `${usersList[0].first_name || usersList[0].username || 'Unknown'}(${usersList[0].message_count})` : 'none'
     });
+
+    // 标记API请求开始（只有确实要调用AI时才标记）
+    cacheService.markAPIRequestStarted(ctx.chat.id, ctx.from.id);
 
     // 使用 Azure OpenAI 生成总结
     try {

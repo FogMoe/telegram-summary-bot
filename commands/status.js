@@ -8,6 +8,7 @@ const messageStore = require('../storage/messageStore');
 const azureOpenAI = require('../services/azureOpenAI');
 const cacheService = require('../services/cacheService');
 const logger = require('../utils/logger');
+const { version } = require('../package.json');
 
 /**
  * 检查用户是否为管理员
@@ -68,7 +69,8 @@ const statusCommand = async (ctx) => {
     statusMessage += `📱 *机器人信息*\n`;
     statusMessage += `• 名称：${botInfo.first_name}\n`;
     statusMessage += `• 用户名：@${botInfo.username}\n`;
-    statusMessage += `• ID：${botInfo.id}\n\n`;
+    statusMessage += `• ID：${botInfo.id}\n`;
+    statusMessage += `• 版本：v${version}\n\n`;
 
     // 当前聊天信息
     statusMessage += `💬 *当前聊天*\n`;
@@ -146,6 +148,7 @@ const statusCommand = async (ctx) => {
     const memoryMB = Math.round(memoryUsage.rss / 1024 / 1024);
 
     statusMessage += `⚙️ *系统信息*\n`;
+    statusMessage += `• 机器人版本：v${version}\n`;
     statusMessage += `• 运行时间：${uptimeHours}小时 ${uptimeMinutes}分钟\n`;
     statusMessage += `• 内存使用：${memoryMB} MB\n`;
     statusMessage += `• Node.js 版本：${process.version}\n`;

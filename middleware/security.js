@@ -12,8 +12,36 @@ const rateLimiter = (() => {
   const userRequests = new Map();
   const RATE_LIMIT = 10; // 每分钟最多10次请求
   const TIME_WINDOW = 60 * 1000; // 1分钟
+  const MAX_ENTRIES = 10000; // 最大缓存条目数
 
-  return (ctx, next) => {
+  // 定期清理过期的条目（防止内存泄漏）
+  const cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    let cleaned = 0;
+    
+    for (const [key, data] of userRequests.entries()) {
+      if (now >= data.resetTime) {
+        userRequests.delete(key);
+        cleaned++;
+      }
+    }
+
+    // 如果条目数仍然过多，删除最旧的条目
+    if (userRequests.size > MAX_ENTRIES) {
+      const sortedEntries = Array.from(userRequests.entries())
+        .sort((a, b) => a[1].resetTime - b[1].resetTime);
+      
+      const toDelete = sortedEntries.slice(0, sortedEntries.length - MAX_ENTRIES);
+      toDelete.forEach(([key]) => userRequests.delete(key));
+      cleaned += toDelete.length;
+    }
+
+    if (cleaned > 0) {
+      logger.debug(`速率限制器清理了 ${cleaned} 个过期条目`);
+    }
+  }, 5 * 60 * 1000); // 每5分钟清理一次
+
+  const middleware = (ctx, next) => {
     const userId = ctx.from?.id;
     if (!userId) return next();
 
@@ -46,6 +74,17 @@ const rateLimiter = (() => {
     userData.count++;
     return next();
   };
+
+  // 添加清理方法
+  middleware.cleanup = () => {
+    if (cleanupInterval) {
+      clearInterval(cleanupInterval);
+    }
+    userRequests.clear();
+    logger.info('速率限制器资源已清理');
+  };
+
+  return middleware;
 })();
 
 /**

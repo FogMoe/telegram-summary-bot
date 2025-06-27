@@ -283,12 +283,12 @@ class MessageStore {
    */
   async setupCleanupJob() {
     // 每6小时执行一次清理
-    setInterval(() => {
+    this.cleanupInterval = setInterval(() => {
       this.cleanupOldMessages();
     }, 6 * 60 * 60 * 1000);
 
     // 启动时执行一次清理
-    setTimeout(() => {
+    this.initCleanupTimeout = setTimeout(() => {
       this.cleanupOldMessages();
     }, 10000); // 10秒后执行
 
@@ -299,6 +299,17 @@ class MessageStore {
    * 关闭数据库连接
    */
   async close() {
+    // 清理定时器防止内存泄漏
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    
+    if (this.initCleanupTimeout) {
+      clearTimeout(this.initCleanupTimeout);
+      this.initCleanupTimeout = null;
+    }
+    
     if (this.db) {
       return new Promise((resolve) => {
         this.db.close((err) => {

@@ -44,6 +44,16 @@ const logger = {
   },
 
   /**
+   * 记录调试日志
+   * @param {string} message - 日志消息
+   * @param {*} data - 附加数据
+   */
+  debug(message, data = null) {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] 🐛 ${message}`, data ? data : '');
+  },
+
+  /**
    * 记录用户活动日志
    * @param {Object} ctx - Telegraf 上下文
    * @param {string} action - 用户操作

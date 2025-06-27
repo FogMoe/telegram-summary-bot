@@ -8,6 +8,9 @@ const { loadCommands } = require('./commands');
 // 引入中间件
 const { requestLogger, commandLogger } = require('./middleware/logging');
 const { rateLimiter, userValidator, contentFilter } = require('./middleware/security');
+const { inputValidation } = require('./middleware/inputValidation');
+const { createCommandThrottle, commandThrottle } = require('./middleware/commandThrottle');
+const duplicateGuard = require('./middleware/duplicateGuard');
 const { 
   messageStoreMiddleware, 
   groupStatusMiddleware, 
@@ -64,11 +67,25 @@ async function initializeServices() {
 function registerMiddleware() {
   logger.info('正在注册中间件...');
   
+  // 防重复处理中间件（最优先）
+  bot.use(duplicateGuard);         // 防止重复处理同一个update
+  
+  // Bot信息注入中间件
+  bot.use((ctx, next) => {
+    // 将bot信息注入到上下文中
+    ctx.botInfo = bot.botInfo;
+    return next();
+  });
+  
   // 基础中间件
   bot.use(requestLogger);           // 请求日志
+  bot.use(inputValidation);         // 输入验证（安全第一）
   bot.use(userValidator);           // 用户验证
   bot.use(rateLimiter);            // 速率限制
   bot.use(contentFilter);          // 内容过滤
+  
+  // 命令节流中间件（针对特定命令）
+  bot.use(createCommandThrottle('summary', 3000)); // /summary 命令3秒节流
   
   // 消息处理中间件
   bot.use(messageStoreMiddleware);  // 消息存储
@@ -168,6 +185,21 @@ async function gracefulShutdown(signal) {
     // 关闭缓存服务
     cacheService.close();
     logger.info('缓存服务已关闭');
+    
+    // 清理防重复中间件资源
+    if (duplicateGuard.cleanup) {
+      duplicateGuard.cleanup();
+    }
+    
+    // 清理速率限制器资源
+    if (rateLimiter.cleanup) {
+      rateLimiter.cleanup();
+    }
+    
+    // 清理命令节流器资源
+    if (commandThrottle.cleanup) {
+      commandThrottle.cleanup();
+    }
     
     logger.success('所有服务已优雅停止');
     process.exit(0);
