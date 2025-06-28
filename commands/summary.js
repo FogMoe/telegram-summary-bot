@@ -277,9 +277,13 @@ function formatSummaryResponse(summaryResult, messageCount, fromCache, escape = 
   
   let response = `📋 *群组聊天总结*\n\n`;
   
-  // 根据escape参数决定是否转义特殊字符
-  const formattedSummary = escape ? escapeMarkdown(summary) : summary;
-  response += `${formattedSummary}\n\n`;
+  // 智能转义：保留AI生成的标题格式，转义其他特殊字符
+  if (escape) {
+    const formattedSummary = smartEscapeMarkdown(summary);
+    response += `${formattedSummary}\n\n`;
+  } else {
+    response += `${summary}\n\n`;
+  }
   
   // 元数据信息
   response += `📊 *分析统计*\n`;
@@ -295,13 +299,14 @@ function formatSummaryResponse(summaryResult, messageCount, fromCache, escape = 
   if (metadata.topUsers && metadata.topUsers.length > 0) {
     const userNames = metadata.topUsers.slice(0, 3).map(u => {
       const name = u.first_name || u.username || `用户${u.user_id}`;
-      return escape ? escapeMarkdown(name) : name;
+      // 用户名总是需要转义，因为可能包含特殊字符
+      return escapeMarkdown(name);
     }).join(', ');
     response += `• 活跃用户：${userNames}\n`;
   }
   
   if (metadata.tokensUsed) {
-    response += `• API 用量：${metadata.tokensUsed} tokens\n`;
+    response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
   }
   
   // 缓存标识
@@ -312,6 +317,41 @@ function formatSummaryResponse(summaryResult, messageCount, fromCache, escape = 
   response += `\n\n⏰ 下次总结请等待5分钟冷却期`;
   
   return response;
+}
+
+/**
+ * 智能转义Markdown：保留标题格式，转义其他特殊字符
+ */
+function smartEscapeMarkdown(text) {
+  if (!text || typeof text !== 'string') {
+    return text;
+  }
+
+  // 保护标题格式：*📌 标题* 或 *标题*
+  const titlePattern = /\*([^*\n]+)\*/g;
+  const titles = [];
+  let titleIndex = 0;
+
+  // 先提取所有标题，用占位符替换
+  const textWithPlaceholders = text.replace(titlePattern, (match, title) => {
+    titles.push(match);
+    return `__TITLE_PLACEHOLDER_${titleIndex++}__`;
+  });
+
+  // 转义非标题部分的特殊字符
+  const escapedText = textWithPlaceholders
+    .replace(/\\/g, '\\\\')    // 反斜杠 (必须最先处理)
+    .replace(/_/g, '\\_')      // 下划线 - 斜体标记
+    .replace(/`/g, '\\`')      // 反引号 - 代码标记  
+    .replace(/\[/g, '\\[');    // 左方括号 - 链接标记
+
+  // 恢复标题格式
+  let finalText = escapedText;
+  titles.forEach((title, index) => {
+    finalText = finalText.replace(`__TITLE_PLACEHOLDER_${index}__`, title);
+  });
+
+  return finalText;
 }
 
 /**
@@ -347,7 +387,7 @@ function formatPlainTextResponse(summaryResult, messageCount, fromCache) {
   }
   
   if (metadata.tokensUsed) {
-    response += `• API 用量：${metadata.tokensUsed} tokens\n`;
+    response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
   }
   
   // 缓存标识

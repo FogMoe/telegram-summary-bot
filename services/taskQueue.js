@@ -167,12 +167,12 @@ class TaskQueue extends EventEmitter {
         timestamp: Date.now()
       });
 
-      // 通知任务失败
+      // 通知任务失败 - 传递完整的错误对象
       this.emit('taskFailed', {
         taskId: task.id,
         chatId,
         userId,
-        error: error.message
+        error: error  // 传递完整的错误对象而不是只有 error.message
       });
     }
   }

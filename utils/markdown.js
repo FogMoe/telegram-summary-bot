@@ -4,12 +4,30 @@
  */
 
 /**
- * 转义Markdown特殊字符
- * 防止用户名或AI生成内容中的特殊字符导致解析错误
+ * 转义传统Markdown特殊字符
+ * 根据Telegram传统Markdown格式要求，只转义 '_', '*', '`', '[' 字符
  * @param {string} text - 需要转义的文本
  * @returns {string} 转义后的文本
  */
 function escapeMarkdown(text) {
+  if (!text || typeof text !== 'string') {
+    return text;
+  }
+
+  return text
+    .replace(/\\/g, '\\\\')    // 反斜杠 (必须最先处理)
+    .replace(/\*/g, '\\*')     // 星号 - 粗体标记
+    .replace(/_/g, '\\_')      // 下划线 - 斜体标记
+    .replace(/`/g, '\\`')      // 反引号 - 代码标记
+    .replace(/\[/g, '\\[');    // 左方括号 - 链接标记
+}
+
+/**
+ * 转义MarkdownV2特殊字符（保留用于兼容性）
+ * @param {string} text - 需要转义的文本
+ * @returns {string} 转义后的文本
+ */
+function escapeMarkdownV2(text) {
   if (!text || typeof text !== 'string') {
     return text;
   }
@@ -57,5 +75,6 @@ function stripMarkdown(text) {
 
 module.exports = {
   escapeMarkdown,
+  escapeMarkdownV2,
   stripMarkdown
 }; 
