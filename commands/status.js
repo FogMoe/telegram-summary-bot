@@ -4,7 +4,7 @@
  */
 
 const messageStore = require('../storage/messageStore');
-const azureOpenAI = require('../services/azureOpenAI');
+const aiService = require('../services/aiService');
 const cacheService = require('../services/cacheService');
 const taskQueue = require('../services/taskQueue');
 const logger = require('../utils/logger');
@@ -63,7 +63,7 @@ const statusCommand = async (ctx) => {
     const userInfo = ctx.from;
 
     // 获取Azure OpenAI状态
-    const openaiStatus = azureOpenAI.getStatus();
+    const openaiStatus = aiService.getStatus();
     
     // 获取缓存统计
     const cacheStats = cacheService.getCacheStats();

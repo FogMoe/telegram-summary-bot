@@ -4,7 +4,7 @@
  */
 
 const messageStore = require('../storage/messageStore');
-const azureOpenAI = require('../services/azureOpenAI');
+const aiService = require('../services/aiService');
 const cacheService = require('../services/cacheService');
 const taskQueue = require('../services/taskQueue');
 const logger = require('../utils/logger');

@@ -90,7 +90,7 @@ async function verifyConfiguration() {
     'middleware/logging.js',
     'middleware/security.js',
     'middleware/messageListener.js',
-    'services/azureOpenAI.js',
+    'services/aiService.js',
     'services/cacheService.js',
     'storage/messageStore.js',
     'utils/logger.js',
@@ -129,9 +129,9 @@ async function verifyConfiguration() {
     logger.info('5. 测试 Azure OpenAI 连接');
     
     try {
-      const azureOpenAI = require('../services/azureOpenAI');
-      await azureOpenAI.init();
-      const isConnected = await azureOpenAI.testConnection();
+          const aiService = require('../services/aiService');
+    await aiService.init();
+    const isConnected = await aiService.testConnection();
       
       if (isConnected) {
         logger.success('Azure OpenAI 连接测试成功');
