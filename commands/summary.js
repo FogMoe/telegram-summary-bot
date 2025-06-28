@@ -332,9 +332,11 @@ function smartEscapeMarkdown(text) {
   const titles = [];
   let titleIndex = 0;
 
-  // 先提取所有标题，用占位符替换
-  const textWithPlaceholders = text.replace(titlePattern, (match, title) => {
-    titles.push(match);
+  // 先提取所有标题，用占位符替换，并同时转义标题内部的下划线
+  const textWithPlaceholders = text.replace(titlePattern, (match) => {
+    // 对标题内部的下划线进行转义，保持星号不变
+    const escapedTitle = match.replace(/_/g, '\\_');
+    titles.push(escapedTitle);
     return `__TITLE_PLACEHOLDER_${titleIndex++}__`;
   });
 

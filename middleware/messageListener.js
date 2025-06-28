@@ -37,6 +37,16 @@ const messageStoreMiddleware = async (ctx, next) => {
       // 异步存储消息（不阻塞消息处理）
       setImmediate(async () => {
         try {
+          // 在存储前处理用户名
+          if (ctx.message.from) {
+            if (ctx.message.from.username) {
+              ctx.message.from.username = ctx.message.from.username.replace(/_/g, '-');
+            }
+            if (ctx.message.from.first_name) {
+              ctx.message.from.first_name = ctx.message.from.first_name.replace(/_/g, '-');
+            }
+          }
+          
           await messageStore.storeMessage(ctx.message, botId);
         } catch (error) {
           logger.error('存储消息失败', {
