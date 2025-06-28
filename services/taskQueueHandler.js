@@ -5,7 +5,7 @@
 
 const cacheService = require('./cacheService');
 const logger = require('../utils/logger');
-const { escapeMarkdown, stripMarkdown, preProcessMarkdown } = require('../utils/markdown');
+const { escapeMarkdown, stripMarkdown, preProcessMarkdown, safeMarkdownProcess } = require('../utils/markdown');
 
 class TaskQueueHandler {
   constructor(bot) {
@@ -229,7 +229,7 @@ class TaskQueueHandler {
         
       } else {
         // 内容不长，正常发送单条消息
-        await this.sendSingleSummary(chatId, messageInfo.messageId, fullResponse, taskId);
+        await this.sendSingleSummary(chatId, messageInfo.messageId, fullResponse, taskId, result);
       }
       
     } catch (error) {
@@ -260,7 +260,9 @@ class TaskQueueHandler {
           taskId,
           chatId,
           userId,
-          error: error.message
+          error: error.message,
+          hasResult: !!result,
+          hasResultMetadata: !!(result?.metadata)
         });
         
         // 尝试发送错误消息
@@ -272,7 +274,7 @@ class TaskQueueHandler {
   /**
    * 发送单条总结消息
    */
-  async sendSingleSummary(chatId, messageId, response, taskId) {
+  async sendSingleSummary(chatId, messageId, response, taskId, result) {
     try {
       await this.safeSendTelegramMessage(
         chatId,
@@ -302,15 +304,20 @@ class TaskQueueHandler {
           markdownError.response.description && 
           markdownError.response.description.includes("can't parse entities")) {
         
-        logger.info('Markdown格式错误，尝试转义后重试', {
+        logger.warn('Markdown格式错误，尝试转义后重试', {
           taskId,
           chatId,
-          error: markdownError.response.description
+          error: markdownError.response.description,
+          errorOffset: markdownError.response.description.match(/byte offset (\d+)/)
         });
         
         // 使用转义版本重试
+        const escapedResult = {
+          summary: response.split('\n\n📊')[0], // 提取主要内容部分
+          metadata: result?.metadata || {}
+        };
         const escapedResponse = this.formatSummaryResponse(
-          { summary: response.split('\n\n📊')[0] }, // 提取主要内容部分
+          escapedResult,
           false, 
           true
         );
@@ -329,13 +336,65 @@ class TaskQueueHandler {
           logger.success('使用转义Markdown格式推送总结结果', { taskId, chatId });
           
         } catch (escapedError) {
-          // 如果转义后仍然失败，使用纯文本
+          // 如果转义后仍然失败，尝试安全Markdown处理
           if (this.isNetworkError(escapedError)) {
             throw escapedError;
           }
           
+          // 检查是否仍然是Markdown格式错误
+          if (escapedError.response && 
+              escapedError.response.error_code === 400 && 
+              escapedError.response.description && 
+              escapedError.response.description.includes("can't parse entities")) {
+            
+            logger.warn('转义后仍有Markdown格式错误，使用安全处理器', {
+              taskId,
+              chatId,
+              error: escapedError.response.description
+            });
+            
+            try {
+              // 使用安全Markdown处理器
+              const summaryContent = response.split('\n\n📊')[0];
+              const safeResult = {
+                summary: safeMarkdownProcess(summaryContent),
+                metadata: result?.metadata || {}
+              };
+              const safeMarkdownResponse = this.formatSummaryResponse(
+                safeResult,
+                false,
+                false
+              );
+              
+              await this.safeSendTelegramMessage(
+                chatId,
+                messageId,
+                safeMarkdownResponse,
+                {
+                  parse_mode: 'Markdown',
+                  disable_web_page_preview: true
+                }
+              );
+              
+              logger.success('使用安全Markdown处理器推送总结结果', { taskId, chatId });
+              return;
+              
+            } catch (safeError) {
+              logger.warn('安全Markdown处理器也失败，使用纯文本', {
+                taskId,
+                chatId,
+                error: safeError.response?.description
+              });
+            }
+          }
+          
+          // 最终回退：使用纯文本
+          const plainTextResult = {
+            summary: response.split('\n\n📊')[0],
+            metadata: result?.metadata || {}
+          };
           const plainTextResponse = this.formatPlainTextResponse(
-            { summary: response.split('\n\n📊')[0] },
+            plainTextResult,
             false
           );
           
@@ -579,8 +638,8 @@ class TaskQueueHandler {
     try {
       const messageInfo = cacheService.getCustomCache(`task_message_${taskId}`);
       if (messageInfo) {
-        // 数字不需要转义，但为了安全起见确保是数字
-        const messageCount = Number(result.metadata?.messagesAnalyzed || 100);
+        // 安全地获取消息数量，处理 result 为 undefined 的情况
+        const messageCount = Number(result?.metadata?.messagesAnalyzed ?? 100);
         
         await this.bot.telegram.editMessageText(
           chatId,
@@ -593,9 +652,15 @@ class TaskQueueHandler {
             disable_web_page_preview: true
           }
         );
+        
+        logger.info('已发送回退错误消息', { taskId, chatId, messageCount });
       }
     } catch (fallbackError) {
-      logger.error('发送错误消息也失败了', fallbackError);
+      logger.error('发送回退错误消息也失败了', {
+        taskId,
+        chatId,
+        error: fallbackError.message
+      });
     }
   }
 
@@ -660,8 +725,8 @@ ${errorMessage}
    * 获取任务完成后的网络错误消息
    */
   getNetworkErrorMessageForTask(result) {
-    // 确保消息数量是数字
-    const messageCount = Number(result.metadata?.messagesAnalyzed || 100);
+    // 安全地获取消息数量，处理 result 为 undefined 的情况
+    const messageCount = Number(result?.metadata?.messagesAnalyzed ?? 100);
     
     return `📋 总结已完成
 
@@ -679,7 +744,7 @@ ${errorMessage}
    * 格式化总结响应消息（Markdown格式）
    */
   formatSummaryResponse(summaryResult, fromCache, escape = false) {
-    const { summary, metadata } = summaryResult;
+    const { summary, metadata = {} } = summaryResult;
     
     let response = `📋 *群组聊天总结*\n\n`;
     
@@ -693,8 +758,8 @@ ${errorMessage}
     
     // 元数据信息
     response += `📊 *分析统计*\n`;
-    response += `• 分析消息：${metadata.messagesAnalyzed} 条\n`;
-    response += `• 参与用户：${metadata.uniqueUsers} 人\n`;
+    response += `• 分析消息：${metadata.messagesAnalyzed ?? '—'} 条\n`;
+    response += `• 参与用户：${metadata.uniqueUsers ?? '—'} 人\n`;
     
     if (metadata.timeRange) {
       const startTime = new Date(metadata.timeRange.earliest * 1000).toLocaleDateString('zh-CN');
@@ -767,7 +832,7 @@ ${errorMessage}
    * 格式化纯文本响应消息（无Markdown格式）
    */
   formatPlainTextResponse(summaryResult, fromCache) {
-    const { summary, metadata } = summaryResult;
+    const { summary, metadata = {} } = summaryResult;
     
     let response = `📋 群组聊天总结\n\n`;
     
@@ -778,8 +843,8 @@ ${errorMessage}
     
     // 元数据信息
     response += `📊 分析统计\n`;
-    response += `• 分析消息：${metadata.messagesAnalyzed} 条\n`;
-    response += `• 参与用户：${metadata.uniqueUsers} 人\n`;
+    response += `• 分析消息：${metadata.messagesAnalyzed ?? '—'} 条\n`;
+    response += `• 参与用户：${metadata.uniqueUsers ?? '—'} 人\n`;
     
     if (metadata.timeRange) {
       const startTime = new Date(metadata.timeRange.earliest * 1000).toLocaleDateString('zh-CN');

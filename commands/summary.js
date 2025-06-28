@@ -9,7 +9,7 @@ const cacheService = require('../services/cacheService');
 const taskQueue = require('../services/taskQueue');
 const logger = require('../utils/logger');
 const { validateNumber, sanitizeInput } = require('../middleware/inputValidation');
-const { escapeMarkdown, stripMarkdown } = require('../utils/markdown');
+const { escapeMarkdown, stripMarkdown, safeMarkdownProcess } = require('../utils/markdown');
 
 const summaryCommand = async (ctx) => {
   try {
@@ -138,18 +138,53 @@ const summaryCommand = async (ctx) => {
           
           logger.warn('缓存消息Markdown格式错误，尝试转义后重试', {
             chatId: ctx.chat.id,
-            error: markdownError.response.description
+            error: markdownError.response.description,
+            errorOffset: markdownError.response.description.match(/byte offset (\d+)/)
           });
           
           try {
             // 使用转义版本重试
-            return await ctx.editMessageText(formatSummaryResponse(cached, messageCount, true, true), {
+            const escapedResponse = formatSummaryResponse(cached, messageCount, true, true);
+            return await ctx.editMessageText(escapedResponse, {
               message_id: processingMessage.message_id,
               parse_mode: 'Markdown',
               disable_web_page_preview: true
             });
           } catch (escapedError) {
-            // 如果转义后仍然失败，使用纯文本
+            // 检查是否仍然是Markdown格式错误
+            if (escapedError.response && 
+                escapedError.response.error_code === 400 && 
+                escapedError.response.description && 
+                escapedError.response.description.includes("can't parse entities")) {
+              
+              logger.warn('转义后仍有Markdown格式错误，尝试安全处理器', {
+                chatId: ctx.chat.id,
+                error: escapedError.response.description
+              });
+              
+              try {
+                // 使用安全Markdown处理器
+                const safeCached = {
+                  summary: safeMarkdownProcess(cached.summary),
+                  metadata: cached.metadata || {}
+                };
+                const safeResponse = formatSummaryResponse(safeCached, messageCount, true, false);
+                
+                return await ctx.editMessageText(safeResponse, {
+                  message_id: processingMessage.message_id,
+                  parse_mode: 'Markdown',
+                  disable_web_page_preview: true
+                });
+                
+              } catch (safeError) {
+                logger.warn('安全Markdown处理器也失败，使用纯文本格式', {
+                  chatId: ctx.chat.id,
+                  error: safeError.response?.description
+                });
+              }
+            }
+            
+            // 最终回退：使用纯文本
             const plainTextResponse = formatPlainTextResponse(cached, messageCount, true);
             
             return await ctx.editMessageText(plainTextResponse, {
@@ -273,7 +308,7 @@ ${error.message}
  * 格式化总结响应消息
  */
 function formatSummaryResponse(summaryResult, messageCount, fromCache, escape = false) {
-  const { summary, metadata } = summaryResult;
+  const { summary, metadata = {} } = summaryResult;
   
   let response = `📋 *群组聊天总结*\n\n`;
   
@@ -287,8 +322,8 @@ function formatSummaryResponse(summaryResult, messageCount, fromCache, escape = 
   
   // 元数据信息
   response += `📊 *分析统计*\n`;
-  response += `• 分析消息：${metadata.messagesAnalyzed} 条\n`;
-  response += `• 参与用户：${metadata.uniqueUsers} 人\n`;
+  response += `• 分析消息：${metadata.messagesAnalyzed ?? '—'} 条\n`;
+  response += `• 参与用户：${metadata.uniqueUsers ?? '—'} 人\n`;
   
   if (metadata.timeRange) {
     const startTime = new Date(metadata.timeRange.earliest * 1000).toLocaleDateString('zh-CN');
@@ -361,7 +396,7 @@ function smartEscapeMarkdown(text) {
  * 格式化纯文本响应消息（无Markdown格式）
  */
 function formatPlainTextResponse(summaryResult, messageCount, fromCache) {
-  const { summary, metadata } = summaryResult;
+  const { summary, metadata = {} } = summaryResult;
   
   let response = `📋 群组聊天总结\n\n`;
   
@@ -372,8 +407,8 @@ function formatPlainTextResponse(summaryResult, messageCount, fromCache) {
   
   // 元数据信息
   response += `📊 分析统计\n`;
-  response += `• 分析消息：${metadata.messagesAnalyzed} 条\n`;
-  response += `• 参与用户：${metadata.uniqueUsers} 人\n`;
+  response += `• 分析消息：${metadata.messagesAnalyzed ?? '—'} 条\n`;
+  response += `• 参与用户：${metadata.uniqueUsers ?? '—'} 人\n`;
   
   if (metadata.timeRange) {
     const startTime = new Date(metadata.timeRange.earliest * 1000).toLocaleDateString('zh-CN');

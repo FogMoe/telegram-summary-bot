@@ -198,7 +198,6 @@ class AIService {
         ],
         max_tokens: 50000,
         temperature: 0.7,
-        top_p: 0.9,
         response_format: responseFormat
       });
 
