@@ -542,7 +542,7 @@ ${errorMessage}
     }
     
     if (metadata.tokensUsed) {
-      response += `• API 用量：${metadata.tokensUsed} tokens\n`;
+      response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
     }
     
     // 缓存标识
@@ -575,9 +575,10 @@ ${errorMessage}
     });
 
     // 转义非标题部分的特殊字符
+    // 注意：下划线的转义很重要，因为它是斜体标记
     const escapedText = textWithPlaceholders
       .replace(/\\/g, '\\\\')    // 反斜杠 (必须最先处理)
-      .replace(/_/g, '\\_')      // 下划线 - 斜体标记
+      .replace(/_/g, '\\_')      // 下划线 - 斜体标记（处理用户名中的下划线）
       .replace(/`/g, '\\`')      // 反引号 - 代码标记  
       .replace(/\[/g, '\\[');    // 左方括号 - 链接标记
 
@@ -623,7 +624,7 @@ ${errorMessage}
     }
     
     if (metadata.tokensUsed) {
-      response += `• API 用量：${metadata.tokensUsed} tokens\n`;
+      response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
     }
     
     // 缓存标识

@@ -157,10 +157,12 @@ class AzureOpenAIService {
       // 检测群组主要语言
       const detectedLanguage = this.detectLanguage(messages);
 
-      // 准备消息文本
+      // 准备消息文本 - 处理用户名中的特殊字符
       const messageTexts = messages.map(msg => {
-        const userName = msg.first_name || msg.username || `用户${msg.user_id}`;
-        return `${userName}: ${msg.text}`;
+        const rawUserName = msg.first_name || msg.username || `用户${msg.user_id}`;
+        // 为AI显示时替换特殊字符，避免Markdown冲突
+        const safeUserName = this.makeSafeUserName(rawUserName);
+        return `${safeUserName}: ${msg.text}`;
       });
 
       const fullText = messageTexts.join('\n');
@@ -304,10 +306,11 @@ class AzureOpenAIService {
 
 Markdown格式要求（Telegram风格）：
 • 使用 *文本* 表示粗体
-• 使用 _文本_ 表示斜体
+• 使用 _文本_ 表示斜体  
 • 使用 \`代码\` 表示等宽字体
 • 使用 [链接文本](URL) 表示链接
 • 使用 \`\`\` 表示代码块
+• 如果正文中需要出现 * _ \` [ 这些字符，请在前面加上反斜杠 \\ 进行转义；如非必要，建议用横杠 - 替代这些符号
 • 适当使用表情符号🔣来增加可读性
 • 适当使用换行和空行来组织内容结构
 
@@ -504,6 +507,24 @@ ${prompt.instruction}`;
     }
     
     return truncated;
+  }
+
+  /**
+   * 处理用户名中的特殊字符，避免Markdown冲突
+   * @param {string} userName - 原始用户名
+   * @returns {string} 处理后的安全用户名
+   */
+  makeSafeUserName(userName) {
+    if (!userName || typeof userName !== 'string') {
+      return userName;
+    }
+
+    return userName
+      .replace(/_/g, '-')      // 下划线替换为中划线
+      .replace(/\*/g, '·')     // 星号替换为中点
+      .replace(/`/g, "'")      // 反引号替换为单引号
+      .replace(/\[/g, '(')     // 左方括号替换为左圆括号
+      .replace(/\]/g, ')');    // 右方括号替换为右圆括号
   }
 
   /**
