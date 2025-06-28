@@ -67,7 +67,7 @@ function buildSystemPrompt(detectedLanguage = 'zh') {
 • 如果内容较长请确保在token限制内完成所有字段
 
 formatted_summary使用Telegram Markdown格式：
-• *文本* = 粗体，_文本_ = 斜体，\`代码\` = 等宽字体
+• *文本* = 粗体，_文本_ = 斜体，\`代码\` = 等宽字体，[链接](https://example.com) = 链接，\`\`\`代码块\`\`\` = 代码块
 • 适当使用表情符号🔣增加可读性
 • 使用\\n表示换行组织内容结构
 

@@ -93,20 +93,39 @@ function preProcessMarkdown(text) {
 
   // 1. 转义所有在单词内部的下划线 `_`
   // 这可以防止 `variable_name` 这类写法导致解析错误
-  // 正则：匹配前后都是字母/数字的下划线，避免错误转义 _italic_
   processedText = processedText.replace(/(?<=[a-zA-Z0-9])_(?=[a-zA-Z0-9])/g, '\\_');
 
   // 2. 检查并修复未配对的 Markdown 实体
   const entities = ['*', '_', '`'];
   for (const char of entities) {
-    // 使用非贪婪模式匹配来计算出现次数
-    const count = (processedText.match(new RegExp(`\\${char}`, 'g')) || []).length;
+    // 正则：匹配未被转义的字符
+    const unescapedCharRegex = new RegExp(`(?<!\\\\)\\${char}`, 'g');
+    let count = (processedText.match(unescapedCharRegex) || []).length;
     
-    // 如果是奇数，说明有未配对的实体
-    if (count % 2 !== 0) {
+    // 对于星号(*)，需要排除用作列表项的情况
+    if (char === '*') {
+      // 正则：匹配行首的列表项标记（*后跟一个空格）
+      const bulletRegex = /^\s*\*\s/gm;
+      const bulletCount = (processedText.match(bulletRegex) || []).length;
+      count -= bulletCount;
+    }
+    
+    // 如果数量为奇数，说明有未配对的实体
+    if (count > 0 && count % 2 !== 0) {
       logger.warn(`检测到未配对的 Markdown 字符 "${char}"，将进行转义处理。`);
-      // 找到最后一个，并将其转义
-      const lastIndex = processedText.lastIndexOf(char);
+      
+      // 找到最后一个未被转义的字符并将其转义
+      let lastIndex = processedText.lastIndexOf(char);
+      while (lastIndex !== -1) {
+        // 如果找到的字符已被转义，则继续往前找
+        if (lastIndex > 0 && processedText[lastIndex - 1] === '\\') {
+          lastIndex = processedText.lastIndexOf(char, lastIndex - 2);
+        } else {
+          // 找到目标，跳出循环
+          break;
+        }
+      }
+
       if (lastIndex !== -1) {
         processedText = 
           processedText.substring(0, lastIndex) + 
