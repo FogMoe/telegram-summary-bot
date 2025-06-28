@@ -63,7 +63,7 @@ function buildSystemPrompt(detectedLanguage = 'zh') {
 
 formatted_summary格式要求：
 • 在正文中禁止使用任何Markdown语法或特殊符号，只允许使用纯文本
-• 正确处理换行，确保格式清晰
+• 正确使用换行符处理换行，确保格式清晰
 
 required结构：
 *📌 主要话题概述*
