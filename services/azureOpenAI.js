@@ -197,27 +197,52 @@ class AzureOpenAIService {
       const systemPrompt = this.buildSystemPrompt(detectedLanguage);
       const userPrompt = this.buildUserPrompt(truncatedText, stats, userInfo, messages.length, detectedLanguage);
 
-      // 调用 Azure OpenAI
+      // 定义结构化输出格式
+      const responseFormat = this.buildResponseFormat(detectedLanguage);
+
+      // 调用 Azure OpenAI 使用结构化输出
       const response = await this.client.chat.completions.create({
         model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        max_tokens: 1500,
+        max_tokens: 1800,
         temperature: 0.7,
-        top_p: 0.9
+        top_p: 0.9,
+        response_format: responseFormat
       });
 
-      const summary = response.choices[0]?.message?.content;
+      const rawContent = response.choices[0]?.message?.content;
       
-      if (!summary) {
+      if (!rawContent) {
         throw new Error('未获得有效的总结结果');
       }
 
+      // 解析结构化响应
+      let structuredResult;
+      try {
+        structuredResult = JSON.parse(rawContent);
+      } catch (parseError) {
+        logger.warn('结构化响应解析失败，回退到原始内容', parseError);
+        // 如果解析失败，回退到原始内容
+        structuredResult = {
+          formatted_summary: rawContent,
+          main_topics: [],
+          discussion_points: [],
+          activity_analysis: '',
+          special_events: '',
+          other_notes: ''
+        };
+      }
+
+      // 生成最终的格式化摘要
+      const summary = this.formatStructuredSummary(structuredResult, detectedLanguage);
+
       logger.info('消息总结生成成功', {
         messagesCount: messages.length,
-        tokensUsed: response.usage?.total_tokens
+        tokensUsed: response.usage?.total_tokens,
+        hasStructuredFormat: !!structuredResult.formatted_summary
       });
 
       return {
@@ -230,7 +255,8 @@ class AzureOpenAIService {
             latest: stats.latest_message
           },
           topUsers: validTopUsers.slice(0, 5),
-          tokensUsed: response.usage?.total_tokens || 0
+          tokensUsed: response.usage?.total_tokens || 0,
+          structuredData: structuredResult
         }
       };
 
@@ -293,7 +319,7 @@ class AzureOpenAIService {
 
     const languageInstruction = languageInstructions[detectedLanguage] || languageInstructions['en'];
 
-    return `你是一个专业的群组聊天记录分析助手。你的任务是分析 Telegram 群组的聊天记录并生成简洁、有用的总结。
+    return `你是一个专业的群组聊天记录分析助手。你的任务是分析 Telegram 群组的聊天记录并生成结构化的总结。
 
 请遵循以下原则：
 1. 提供客观、准确的总结，避免主观判断
@@ -304,19 +330,21 @@ class AzureOpenAIService {
 6. 总结应该简洁明了，突出重点
 7. 根据群组聊天的主要语言来回复，保持语言一致性
 
-Markdown格式要求（Telegram风格）：
+CRITICAL：你必须按照JSON schema严格输出结构化数据。
+
+在formatted_summary字段中，请使用正确的Telegram Markdown格式：
 • 使用 *文本* 表示粗体
 • 使用 _文本_ 表示斜体  
 • 使用 \`代码\` 表示等宽字体
 • 使用 [链接文本](URL) 表示链接
 • 使用 \`\`\` 表示代码块
-• 如果正文中需要出现 * _ \` [ 这些字符，请在前面加上反斜杠 \\ 进行转义；如非必要，建议用横杠 - 替代这些符号
+• 如果正文中需要出现（* _ \` [）这些字符，请在前面加上反斜杠 \\ 进行转义
 • 适当使用表情符号🔣来增加可读性
 • 适当使用换行和空行来组织内容结构
 
-总结结构模板：
+formatted_summary的结构要求：
 *📌 主要话题概述*
-对群组讨论的核心主题进行概括
+对群组讨论的核心主题进行简洁概括
 
 *💬 重要讨论点*
 列出关键的讨论内容和观点
@@ -325,7 +353,13 @@ Markdown格式要求（Telegram风格）：
 分析成员参与度和互动模式
 
 *⭐ 特殊事件或决定*
-如有重要事件或达成的决定，请特别说明`;}
+如有重要事件或达成的决定，请特别说明
+
+*🖊 其他备注*
+总结有用的信息内容
+
+确保所有标题都用 *粗体* 格式标记，格式必须一致！`
+;}
 
   /**
    * 构建用户提示词
@@ -575,6 +609,143 @@ ${prompt.instruction}`;
       deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
       apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview'
     };
+  }
+
+  /**
+   * 构建结构化输出格式定义
+   * @param {string} detectedLanguage - 检测到的语言
+   */
+  buildResponseFormat(detectedLanguage = 'zh') {
+    const descriptions = {
+      'zh': {
+        formatted_summary: '完整的格式化摘要，使用正确的Telegram Markdown格式',
+        main_topics: '主要话题列表',
+        discussion_points: '重要讨论点列表',
+        activity_analysis: '群组活跃度分析',
+        special_events: '特殊事件或决定',
+        other_notes: '其他备注'
+      },
+      'en': {
+        formatted_summary: 'Complete formatted summary using correct Telegram Markdown format',
+        main_topics: 'List of main topics',
+        discussion_points: 'List of important discussion points',
+        activity_analysis: 'Group activity analysis',
+        special_events: 'Special events or decisions',
+        other_notes: 'Other notes'
+      }
+    };
+
+    const desc = descriptions[detectedLanguage] || descriptions['en'];
+
+    return {
+      type: "json_schema",
+      json_schema: {
+        name: "telegram_summary",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            formatted_summary: {
+              type: "string",
+              description: desc.formatted_summary
+            },
+            main_topics: {
+              type: "array",
+              items: { type: "string" },
+              description: desc.main_topics
+            },
+            discussion_points: {
+              type: "array",
+              items: { type: "string" },
+              description: desc.discussion_points
+            },
+            activity_analysis: {
+              type: "string",
+              description: desc.activity_analysis
+            },
+            special_events: {
+              type: "string",
+              description: desc.special_events
+            },
+            other_notes: {
+              type: "string",
+              description: desc.other_notes
+            }
+          },
+          required: ["formatted_summary", "main_topics", "discussion_points", "activity_analysis", "special_events", "other_notes"],
+          additionalProperties: false
+        }
+      }
+    };
+  }
+
+  /**
+   * 格式化结构化摘要结果
+   * @param {Object} structuredResult - 结构化结果
+   * @param {string} detectedLanguage - 检测到的语言
+   */
+  formatStructuredSummary(structuredResult, detectedLanguage = 'zh') {
+    // 如果已经有格式化的摘要，直接使用
+    if (structuredResult.formatted_summary) {
+      return structuredResult.formatted_summary;
+    }
+
+    // 否则根据结构化数据生成格式化摘要
+    const templates = {
+      'zh': {
+        mainTopics: '*📌 主要话题概述*',
+        discussionPoints: '*💬 重要讨论点*',
+        activityAnalysis: '*👥 群组活跃度分析*',
+        specialEvents: '*⭐ 特殊事件或决定*',
+        otherNotes: '*🖊 其他备注*'
+      },
+      'en': {
+        mainTopics: '*📌 Main Topics Overview*',
+        discussionPoints: '*💬 Important Discussion Points*',
+        activityAnalysis: '*👥 Group Activity Analysis*',
+        specialEvents: '*⭐ Special Events or Decisions*',
+        otherNotes: '*🖊 Other Notes*'
+      }
+    };
+
+    const template = templates[detectedLanguage] || templates['en'];
+    
+    let formattedSummary = '';
+
+    // 主要话题
+    if (structuredResult.main_topics && structuredResult.main_topics.length > 0) {
+      formattedSummary += `${template.mainTopics}\n`;
+      structuredResult.main_topics.forEach(topic => {
+        formattedSummary += `• ${topic}\n`;
+      });
+      formattedSummary += '\n';
+    }
+
+    // 重要讨论点
+    if (structuredResult.discussion_points && structuredResult.discussion_points.length > 0) {
+      formattedSummary += `${template.discussionPoints}\n`;
+      structuredResult.discussion_points.forEach(point => {
+        formattedSummary += `• ${point}\n`;
+      });
+      formattedSummary += '\n';
+    }
+
+    // 群组活跃度分析
+    if (structuredResult.activity_analysis) {
+      formattedSummary += `${template.activityAnalysis}\n${structuredResult.activity_analysis}\n\n`;
+    }
+
+    // 特殊事件
+    if (structuredResult.special_events) {
+      formattedSummary += `${template.specialEvents}\n${structuredResult.special_events}\n\n`;
+    }
+
+    // 其他备注
+    if (structuredResult.other_notes) {
+      formattedSummary += `${template.otherNotes}\n${structuredResult.other_notes}`;
+    }
+
+    return formattedSummary.trim();
   }
 }
 
