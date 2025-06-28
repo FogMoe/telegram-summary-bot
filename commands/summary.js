@@ -305,9 +305,9 @@ function formatSummaryResponse(summaryResult, messageCount, fromCache, escape = 
     response += `• 活跃用户：${userNames}\n`;
   }
   
-  if (metadata.tokensUsed) {
-    response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
-  }
+  // if (metadata.tokensUsed) {
+  //   response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
+  // }
   
   // 缓存标识
   if (fromCache) {
@@ -389,9 +389,9 @@ function formatPlainTextResponse(summaryResult, messageCount, fromCache) {
     response += `• 活跃用户：${userNames}\n`;
   }
   
-  if (metadata.tokensUsed) {
-    response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
-  }
+  // if (metadata.tokensUsed) {
+  //   response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
+  // }
   
   // 缓存标识
   if (fromCache) {

@@ -3,10 +3,12 @@
  * 支持主要模型(Gemini)和备用模型(Azure OpenAI)的自动切换
  */
 
-const { AzureOpenAI } = require('openai');
-const OpenAI = require('openai');
 const logger = require('../utils/logger');
-const textUtils = require('../utils/text');
+const { initPrimaryClient, initFallbackClient } = require('./ai/clientFactory');
+const { buildSystemPrompt, buildUserPrompt, buildResponseFormat } = require('./ai/promptBuilder');
+const { cleanJsonContent, repairTruncatedJson, extractSummaryFromFailedJson, formatStructuredSummary } = require('./ai/responseHandler');
+const { detectLanguage } = require('./ai/languageDetector');
+const { truncateToTokenLimit, makeSafeUserName } = require('./ai/utils');
 
 class AIService {
   constructor() {
@@ -19,67 +21,11 @@ class AIService {
    * 初始化 AI 客户端
    */
   async init() {
-    try {
-      // 初始化主要模型 (Gemini)
-      await this.initPrimaryClient();
-      
-      // 初始化备用模型 (Azure OpenAI)
-      await this.initFallbackClient();
+    this.primaryClient = initPrimaryClient();
+    this.fallbackClient = initFallbackClient();
 
-      this.isInitialized = true;
-      logger.success('AI 服务初始化成功 (主要模型: Gemini, 备用模型: Azure OpenAI)');
-      
-    } catch (error) {
-      logger.error('AI 服务初始化失败', error);
-      throw error;
-    }
-  }
-
-  /**
-   * 初始化主要客户端 (Gemini API)
-   */
-  async initPrimaryClient() {
-    const requiredEnvVars = ['GEMINI_API_KEY'];
-    
-    for (const envVar of requiredEnvVars) {
-      if (!process.env[envVar]) {
-        throw new Error(`缺少必要的环境变量: ${envVar}`);
-      }
-    }
-
-    this.primaryClient = new OpenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-    });
-
-    logger.info('Gemini API 客户端初始化成功');
-  }
-
-  /**
-   * 初始化备用客户端 (Azure OpenAI)
-   */
-  async initFallbackClient() {
-    const requiredEnvVars = [
-      'AZURE_OPENAI_API_KEY',
-      'AZURE_OPENAI_ENDPOINT',
-      'AZURE_OPENAI_DEPLOYMENT_NAME'
-    ];
-
-    for (const envVar of requiredEnvVars) {
-      if (!process.env[envVar]) {
-        logger.warn(`备用模型环境变量缺失: ${envVar}`);
-        return;
-      }
-    }
-
-    this.fallbackClient = new AzureOpenAI({
-      apiKey: process.env.AZURE_OPENAI_API_KEY,
-      endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-      apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview',
-      deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME
-    });
-
-    logger.info('Azure OpenAI 备用客户端初始化成功');
+    this.isInitialized = true;
+    logger.success('AI 服务初始化成功');
   }
 
   /**
@@ -101,6 +47,9 @@ class AIService {
 
     // 首先尝试主要模型 (Gemini)
     try {
+      if (!this.primaryClient) {
+        throw new Error('主要模型 (Gemini) 未配置');
+      }
       logger.info('尝试使用主要模型 (Gemini) 生成内容');
       
       const primaryOptions = {
@@ -177,86 +126,6 @@ class AIService {
   }
 
   /**
-   * 检测群组消息的主要语言
-   * @param {Array} messages - 消息列表
-   * @returns {string} 检测到的语言代码
-   */
-  detectLanguage(messages) {
-    // 合并所有消息文本用于语言检测
-    const allText = messages.map(msg => msg.text).join(' ');
-    
-    // 简单的语言检测规则（基于字符和关键词）
-    const languagePatterns = {
-      // 中文（简体）
-      'zh': /[\u4e00-\u9fff]/,
-      // 中文（繁体）- 检测繁体字特征
-      'zh-tw': /[繁體臺灣復興課時間]/,
-      // 英文
-      'en': /^[a-zA-Z\s\d\.,!?\-'"():;]+$/,
-      // 日文
-      'ja': /[\u3040-\u309f\u30a0-\u30ff]/,
-      // 韩文
-      'ko': /[\uac00-\ud7af]/,
-      // 俄文
-      'ru': /[\u0400-\u04ff]/,
-      // 阿拉伯文
-      'ar': /[\u0600-\u06ff]/,
-      // 泰文
-      'th': /[\u0e00-\u0e7f]/,
-      // 越南文（检测特殊字符）
-      'vi': /[àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/,
-      // 德文
-      'de': /[äöüßÄÖÜ]/,
-      // 法文
-      'fr': /[àâäéèêëïîôöùûüÿç]/,
-      // 西班牙文
-      'es': /[ñáéíóúü¿¡]/,
-      // 葡萄牙文
-      'pt': /[ãõáéíóúâêîôûàèìòùç]/,
-      // 意大利文
-      'it': /[àèéìíîòóù]/,
-      // 荷兰文
-      'nl': /[áéíóúèë]/,
-      // 波兰文
-      'pl': /[ąćęłńóśźż]/,
-      // 土耳其文
-      'tr': /[çğıöşü]/,
-      // 匈牙利文
-      'hu': /[áéíóöőúüű]/
-    };
-
-    // 计算各种语言的匹配度
-    const languageScores = {};
-    
-    for (const [lang, pattern] of Object.entries(languagePatterns)) {
-      const matches = allText.match(new RegExp(pattern.source, 'g'));
-      languageScores[lang] = matches ? matches.length : 0;
-    }
-
-    // 特殊处理：检查英文（如果主要是ASCII字符）
-    const asciiRatio = (allText.match(/[a-zA-Z\s]/g) || []).length / allText.length;
-    if (asciiRatio > 0.8 && languageScores['zh'] === 0) {
-      languageScores['en'] = allText.length * 0.8;
-    }
-
-    // 找出得分最高的语言
-    const detectedLanguage = Object.entries(languageScores)
-      .filter(([, score]) => score > 0)
-      .sort(([,a], [,b]) => b - a)[0]?.[0] || 'en';
-
-    logger.info(`检测到群组主要语言: ${detectedLanguage}`, {
-      scores: Object.fromEntries(
-        Object.entries(languageScores)
-          .filter(([, score]) => score > 0)
-          .sort(([,a], [,b]) => b - a)
-          .slice(0, 3)
-      )
-    });
-
-    return detectedLanguage;
-  }
-
-  /**
    * 总结群组消息
    * @param {Array} messages - 消息列表
    * @param {Object} stats - 群组统计信息
@@ -275,19 +144,18 @@ class AIService {
       });
       
       // 检测群组主要语言
-      const detectedLanguage = this.detectLanguage(messages);
+      const detectedLanguage = detectLanguage(messages);
 
-      // 准备消息文本 - 处理用户名中的特殊字符
+      // 准备消息文本
       const messageTexts = messages.map(msg => {
         const rawUserName = msg.first_name || msg.username || `用户${msg.user_id}`;
-        // 为AI显示时替换特殊字符，避免Markdown冲突
-        const safeUserName = this.makeSafeUserName(rawUserName);
+        const safeUserName = makeSafeUserName(rawUserName);
         return `${safeUserName}: ${msg.text}`;
       });
 
       const fullText = messageTexts.join('\n');
       
-      // 检查消息记录是否过长（超过 50k 字符）
+      // 检查消息记录是否过长
       if (fullText.length > 50000) {
         logger.warn('消息记录超过长度限制', {
           textLength: fullText.length,
@@ -302,67 +170,91 @@ class AIService {
         throw error;
       }
       
-      // 如果消息太长，进行截断
-      const maxTokens = 15000; // 保留足够的空间用于系统提示和回复
-      const truncatedText = this.truncateToTokenLimit(fullText, maxTokens);
+      const maxInputTokens = 6000;
+      const truncatedText = truncateToTokenLimit(fullText, maxInputTokens);
 
-      // 准备用户信息（确保 topUsers 是数组）
       const validTopUsers = Array.isArray(topUsers) ? topUsers : [];
       const userInfo = validTopUsers.map(user => {
         const name = user.first_name || user.username || `用户${user.user_id}`;
         return `${name} (${user.message_count}条消息)`;
       }).join(', ');
 
-      // 构建提示词（使用检测到的语言）
-      const systemPrompt = this.buildSystemPrompt(detectedLanguage);
-      const userPrompt = this.buildUserPrompt(truncatedText, stats, userInfo, messages.length, detectedLanguage);
+      const systemPrompt = buildSystemPrompt(detectedLanguage);
+      const userPrompt = buildUserPrompt(truncatedText, stats, userInfo, messages.length, detectedLanguage);
 
-      // 定义结构化输出格式
-      const responseFormat = this.buildResponseFormat(detectedLanguage);
+      const responseFormat = buildResponseFormat(detectedLanguage);
 
-      // 使用自动切换功能调用AI模型
+      const inputLength = systemPrompt.length + userPrompt.length;
+      logger.info('AI调用参数', {
+        inputLength,
+        estimatedInputTokens: Math.ceil(inputLength / 2),
+        messagesCount: messages.length
+      });
+
       const response = await this.generateContentWithFallback({
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        max_tokens: 1800,
+        max_tokens: 50000,
         temperature: 0.7,
         top_p: 0.9,
         response_format: responseFormat
       });
 
-      const rawContent = response.choices[0]?.message?.content;
+      let rawContent = response.choices[0]?.message?.content;
+      let finishReason = response.choices[0]?.finish_reason;
       
-      if (!rawContent) {
-        throw new Error('未获得有效的总结结果');
+      logger.info('AI响应详情', {
+        contentLength: rawContent?.length || 0,
+        finishReason: finishReason,
+        usage: response.usage,
+        modelUsed: response.modelUsed,
+        contentPreview: rawContent?.substring(0, 200) || 'null'
+      });
+      
+      if (!rawContent || rawContent.trim() === '') {
+        logger.error('AI响应内容为空', { response, finishReason });
+        throw new Error('未获得有效的总结结果 - AI返回空内容');
       }
 
-      // 解析结构化响应
+      // 记录是否被截断（但不进行重试）
+      if (finishReason === 'length') {
+        logger.warn('AI输出因长度限制被截断，但保持使用完整聊天记录', {
+          contentLength: rawContent.length,
+          inputLength: inputLength,
+          messagesCount: messages.length
+        });
+      }
+
       let structuredResult;
       try {
         structuredResult = JSON.parse(rawContent);
       } catch (parseError) {
-        logger.warn('结构化响应解析失败，回退到原始内容', parseError);
-        // 如果解析失败，回退到原始内容
-        structuredResult = {
-          formatted_summary: rawContent,
-          main_topics: [],
-          discussion_points: [],
-          activity_analysis: '',
-          special_events: '',
-          other_notes: ''
-        };
+        logger.warn('结构化响应解析失败，尝试清理JSON格式', { error: parseError.message });
+        
+        try {
+          const cleanedContent = cleanJsonContent(rawContent);
+          structuredResult = JSON.parse(cleanedContent);
+          logger.info('JSON清理成功，解析通过');
+        } catch (cleanError) {
+          logger.warn('JSON清理仍然失败，使用纯文本回退', cleanError);
+          const extractedSummary = extractSummaryFromFailedJson(rawContent);
+          
+          structuredResult = {
+            formatted_summary: extractedSummary,
+            main_topics: [],
+            discussion_points: [],
+            activity_analysis: '',
+            special_events: '',
+            other_notes: ''
+          };
+        }
       }
 
-      // 生成最终的格式化摘要
-      const summary = this.formatStructuredSummary(structuredResult, detectedLanguage);
+      const summary = formatStructuredSummary(structuredResult, detectedLanguage);
 
-      logger.info('消息总结生成成功', {
-        messagesCount: messages.length,
-        tokensUsed: response.usage?.total_tokens,
-        hasStructuredFormat: !!structuredResult.formatted_summary
-      });
+      logger.info('消息总结生成成功');
 
       return {
         summary,
@@ -386,311 +278,34 @@ class AIService {
   }
 
   /**
-   * 构建系统提示词
-   * - 注意：用户名可能包含下划线等特殊字符，在提及用户时要自然表达，避免过度使用下划线和其他格式字符
-   * @param {string} detectedLanguage - 检测到的群组主要语言
+   * 诊断AI服务配置和状态
    */
-  buildSystemPrompt(detectedLanguage = 'zh') {
-    const languageInstructions = {
-      'zh': '使用简体中文回复',
-      'zh-tw': '使用繁體中文回复',
-      'en': 'Reply in English',
-      'ja': '日本語で返答してください',
-      'ko': '한국어로 답변해주세요',
-      'es': 'Responde en español',
-      'fr': 'Répondez en français',
-      'de': 'Antworten Sie auf Deutsch',
-      'ru': 'Отвечайте на русском языке',
-      'pt': 'Responda em português',
-      'it': 'Rispondi in italiano',
-      'ar': 'أجب باللغة العربية',
-      'hi': 'हिंदी में उत्तर दें',
-      'th': 'ตอบเป็นภาษาไทย',
-      'vi': 'Trả lời bằng tiếng Việt',
-      'id': 'Jawab dalam bahasa Indonesia',
-      'ms': 'Jawab dalam bahasa Melayu',
-      'tr': 'Türkçe cevap verin',
-      'nl': 'Antwoord in het Nederlands',
-      'sv': 'Svara på svenska',
-      'da': 'Svar på dansk',
-      'no': 'Svar på norsk',
-      'fi': 'Vastaa suomeksi',
-      'pl': 'Odpowiedz po polsku',
-      'cs': 'Odpovězte v češtině',
-      'sk': 'Odpovedajte v slovenčine',
-      'hu': 'Válaszoljon magyarul',
-      'ro': 'Răspundeți în română',
-      'bg': 'Отговорете на български',
-      'hr': 'Odgovorite na hrvatskom',
-      'sr': 'Одговорите на српском',
-      'sl': 'Odgovorite v slovenščini',
-      'et': 'Vastake eesti keeles',
-      'lv': 'Atbildiet latviešu valodā',
-      'lt': 'Atsakykite lietuvių kalba',
-      'uk': 'Відповідайте українською',
-      'be': 'Адказвайце па-беларуску',
-      'ka': 'უპასუხეთ ქართულად',
-      'am': 'በአማርኛ ይመልሱ',
-      'he': 'ענה בעברית',
-      'fa': 'به فارسی پاسخ دهید',
-      'ur': 'اردو میں جواب دیں'
+  async diagnoseProblem() {
+    logger.info('开始诊断AI服务问题');
+    
+    const diagnosis = {
+      initialization: this.isInitialized,
+      primaryClient: !!this.primaryClient,
+      fallbackClient: !!this.fallbackClient,
+      environment: {
+        geminiApiKey: process.env.GEMINI_API_KEY ? '已配置' : '未配置',
+        geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+        azureApiKey: process.env.AZURE_OPENAI_API_KEY ? '已配置' : '未配置',
+        azureEndpoint: process.env.AZURE_OPENAI_ENDPOINT || '未配置',
+        azureDeployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || '未配置'
+      }
     };
-
-    const languageInstruction = languageInstructions[detectedLanguage] || languageInstructions['en'];
-
-    return `你是一个专业的群组聊天记录分析助手。你的任务是分析 Telegram 群组的聊天记录并生成结构化的总结。
-
-请遵循以下原则：
-1. 提供客观、准确的总结，避免主观判断
-2. 识别主要话题和讨论重点
-3. 注意群组成员的互动模式
-4. 保护用户隐私，不要透露敏感个人信息
-5. ${languageInstruction}
-6. 总结应该简洁明了，突出重点
-7. 根据群组聊天的主要语言来回复，保持语言一致性
-
-CRITICAL：你必须按照JSON schema严格输出结构化数据。
-
-在formatted_summary字段中，请使用正确的Telegram Markdown格式：
-• 使用 *文本* 表示粗体
-• 使用 _文本_ 表示斜体  
-• 使用 \`代码\` 表示等宽字体
-• 使用 [链接文本](URL) 表示链接
-• 使用 \`\`\` 表示代码块
-• 如果正文中需要出现（* _ \` [）这些字符，请在前面加上反斜杠 \\ 进行转义，或改为横杠 - 替代这些符号
-• 适当使用表情符号🔣来增加可读性
-• 适当使用换行和空行来组织内容结构
-
-formatted_summary的结构要求：
-*📌 主要话题概述*
-对群组讨论的核心主题进行简洁概括
-
-*💬 重要讨论点*
-列出关键的讨论内容和观点
-
-*👥 群组活跃度分析*
-分析成员参与度和互动模式
-
-*⭐ 特殊事件或决定*
-如有重要事件或达成的决定，请特别说明
-
-*🖊 其他备注*
-总结有用的信息内容
-
-确保所有标题都用 *粗体* 格式标记，格式必须一致！`
-;}
-
-  /**
-   * 构建用户提示词
-   * @param {string} messagesText - 消息文本
-   * @param {Object} stats - 统计信息
-   * @param {string} userInfo - 用户信息
-   * @param {number} messageCount - 消息数量
-   * @param {string} detectedLanguage - 检测到的语言
-   */
-  buildUserPrompt(messagesText, stats, userInfo, messageCount, detectedLanguage = 'zh') {
-    // 根据检测到的语言调整提示词
-         const prompts = {
-       'zh': {
-         title: '请总结以下 Telegram 群组的聊天记录：',
-         statsTitle: '*群组统计信息*',
-         analyzedMessages: '• 分析消息数：',
-         participantUsers: '• 参与用户数：',
-         timeRange: '• 时间范围：',
-         activeUsers: '• 活跃用户：',
-         chatRecords: '*聊天记录*',
-         summaryRequest: '*请提供总结*',
-         instruction: '请基于以上聊天记录，生成一个全面的总结，使用加粗标记各部分标题，包括主要话题、重要讨论点和群组互动情况。',
-         messageUnit: ' 条',
-         userUnit: ' 人',
-         timeTo: ' 至 '
-       },
-             'zh-tw': {
-         title: '請總結以下 Telegram 群組的聊天記錄：',
-         statsTitle: '*群組統計資訊*',
-         analyzedMessages: '• 分析訊息數：',
-         participantUsers: '• 參與用戶數：',
-         timeRange: '• 時間範圍：',
-         activeUsers: '• 活躍用戶：',
-         chatRecords: '*聊天記錄*',
-         summaryRequest: '*請提供總結*',
-         instruction: '請基於以上聊天記錄，生成一個全面的總結，使用加粗標記各部分標題，包括主要話題、重要討論點和群組互動情況。',
-         messageUnit: ' 條',
-         userUnit: ' 人',
-         timeTo: ' 至 '
-       },
-       'en': {
-         title: 'Please summarize the following Telegram group chat records:',
-         statsTitle: '*Group Statistics*',
-         analyzedMessages: '• Messages analyzed: ',
-         participantUsers: '• Participating users: ',
-         timeRange: '• Time range: ',
-         activeUsers: '• Active users: ',
-         chatRecords: '*Chat Records*',
-         summaryRequest: '*Please provide a summary*',
-         instruction: 'Based on the above chat records, generate a concise and comprehensive summary using bold formatting for section titles, including main topics, important discussion points, and group interaction patterns.',
-         messageUnit: ' messages',
-         userUnit: ' users',
-         timeTo: ' to '
-       },
-             'ja': {
-         title: '以下のTelegramグループチャット記録を要約してください：',
-         statsTitle: '*グループ統計情報*',
-         analyzedMessages: '• 分析メッセージ数：',
-         participantUsers: '• 参加ユーザー数：',
-         timeRange: '• 時間範囲：',
-         activeUsers: '• アクティブユーザー：',
-         chatRecords: '*チャット記録*',
-         summaryRequest: '*要約をお願いします*',
-         instruction: '上記のチャット記録に基づいて、太字でセクションタイトルをマークして、主要なトピック、重要な議論点、グループの相互作用パターンを含む簡潔で包括的な要約を生成してください。',
-         messageUnit: ' 件',
-         userUnit: ' 人',
-         timeTo: ' から '
-       },
-       'ko': {
-         title: '다음 텔레그램 그룹 채팅 기록을 요약해 주세요:',
-         statsTitle: '**그룹 통계 정보**',
-         analyzedMessages: '• 분석된 메시지 수: ',
-         participantUsers: '• 참여 사용자 수: ',
-         timeRange: '• 시간 범위: ',
-         activeUsers: '• 활성 사용자: ',
-         chatRecords: '**채팅 기록**',
-         summaryRequest: '**요약을 제공해 주세요**',
-         instruction: '위 채팅 기록을 바탕으로 굵은 글씨로 섹션 제목을 표시하여 주요 주제, 중요한 토론 포인트, 그룹 상호작용 패턴을 포함한 간결하고 포괄적인 요약을 생성해 주세요.',
-         messageUnit: ' 개',
-         userUnit: ' 명',
-         timeTo: ' 부터 '
-       },
-             'es': {
-         title: 'Por favor resume los siguientes registros de chat del grupo de Telegram:',
-         statsTitle: '**Estadísticas del Grupo**',
-         analyzedMessages: '• Mensajes analizados: ',
-         participantUsers: '• Usuarios participantes: ',
-         timeRange: '• Rango de tiempo: ',
-         activeUsers: '• Usuarios activos: ',
-         chatRecords: '**Registros de Chat**',
-         summaryRequest: '**Por favor proporciona un resumen**',
-         instruction: 'Basado en los registros de chat anteriores, genera un resumen conciso y completo usando formato en negrita para los títulos de sección, que incluya temas principales, puntos de discusión importantes y patrones de interacción del grupo.',
-         messageUnit: ' mensajes',
-         userUnit: ' usuarios',
-         timeTo: ' a '
-       },
-       'fr': {
-         title: 'Veuillez résumer les enregistrements de chat de groupe Telegram suivants:',
-         statsTitle: '**Statistiques du Groupe**',
-         analyzedMessages: '• Messages analysés: ',
-         participantUsers: '• Utilisateurs participants: ',
-         timeRange: '• Plage de temps: ',
-         activeUsers: '• Utilisateurs actifs: ',
-         chatRecords: '**Enregistrements de Chat**',
-         summaryRequest: '**Veuillez fournir un résumé**',
-         instruction: 'Basé sur les enregistrements de chat ci-dessus, générez un résumé concis et complet en utilisant le format gras pour les titres de section, incluant les sujets principaux, les points de discussion importants et les modèles d\'interaction du groupe.',
-         messageUnit: ' messages',
-         userUnit: ' utilisateurs',
-         timeTo: ' à '
-       },
-       'de': {
-         title: 'Bitte fassen Sie die folgenden Telegram-Gruppenchat-Aufzeichnungen zusammen:',
-         statsTitle: '**Gruppenstatistiken**',
-         analyzedMessages: '• Analysierte Nachrichten: ',
-         participantUsers: '• Teilnehmende Benutzer: ',
-         timeRange: '• Zeitraum: ',
-         activeUsers: '• Aktive Benutzer: ',
-         chatRecords: '**Chat-Aufzeichnungen**',
-         summaryRequest: '**Bitte geben Sie eine Zusammenfassung**',
-         instruction: 'Basierend auf den obigen Chat-Aufzeichnungen, erstellen Sie eine prägnante und umfassende Zusammenfassung mit fett formatierter Abschnittstitel, mit Hauptthemen, wichtigen Diskussionspunkten und Gruppeninteraktionsmustern.',
-         messageUnit: ' Nachrichten',
-         userUnit: ' Benutzer',
-         timeTo: ' bis '
-       },
-       'ru': {
-         title: 'Пожалуйста, подведите итоги следующих записей группового чата Telegram:',
-         statsTitle: '*Статистика Группы*',
-         analyzedMessages: '• Проанализированные сообщения: ',
-         participantUsers: '• Участвующие пользователи: ',
-         timeRange: '• Временной диапазон: ',
-         activeUsers: '• Активные пользователи: ',
-         chatRecords: '*Записи Чата*',
-         summaryRequest: '*Пожалуйста, предоставьте резюме*',
-         instruction: 'Основываясь на приведенных выше записях чата, создайте краткое и всестороннее резюме, используя жирный шрифт для заголовков разделов, включающее основные темы, важные моменты обсуждения и модели взаимодействия группы.',
-         messageUnit: ' сообщений',
-         userUnit: ' пользователей',
-         timeTo: ' до '
-       }
-    };
-
-    const prompt = prompts[detectedLanguage] || prompts['en'];
-
-         return `${prompt.title}
-
-${prompt.statsTitle}
-${prompt.analyzedMessages}${messageCount}${prompt.messageUnit}
-${prompt.participantUsers}${stats.unique_users}${prompt.userUnit}
-${prompt.timeRange}${this.formatTimestamp(stats.earliest_message)}${prompt.timeTo}${this.formatTimestamp(stats.latest_message)}
-${prompt.activeUsers}${userInfo}
-
-${prompt.chatRecords}
-${messagesText}
-
-${prompt.summaryRequest}
-${prompt.instruction}`;
-  }
-
-  /**
-   * 将文本截断到指定的 token 限制
-   */
-  truncateToTokenLimit(text, maxTokens) {
-    // 简单的 token 估算：约 4 个字符 = 1 个 token
-    const estimatedTokens = text.length / 4;
     
-    if (estimatedTokens <= maxTokens) {
-      return text;
-    }
-
-    // 计算需要保留的字符数
-    const maxChars = maxTokens * 4;
+    logger.info('AI服务诊断结果', diagnosis);
     
-    // 从末尾开始截断，保留最新的消息
-    const truncated = text.slice(-maxChars);
-    
-    // 找到第一个完整的消息行
-    const firstNewline = truncated.indexOf('\n');
-    if (firstNewline > 0) {
-      return truncated.slice(firstNewline + 1);
+    try {
+      const testResult = await this.testConnection();
+      diagnosis.connectionTest = testResult;
+    } catch (error) {
+      diagnosis.connectionTest = { error: error.message };
     }
     
-    return truncated;
-  }
-
-  /**
-   * 处理用户名中的特殊字符，避免Markdown冲突
-   * @param {string} userName - 原始用户名
-   * @returns {string} 处理后的安全用户名
-   */
-  makeSafeUserName(userName) {
-    if (!userName || typeof userName !== 'string') {
-      return userName;
-    }
-
-    return userName
-      .replace(/_/g, '-')      // 下划线替换为中划线
-      .replace(/\*/g, '·')     // 星号替换为中点
-      .replace(/`/g, "'")      // 反引号替换为单引号
-      .replace(/\[/g, '(')     // 左方括号替换为左圆括号
-      .replace(/\]/g, ')');    // 右方括号替换为右圆括号
-  }
-
-  /**
-   * 格式化时间戳
-   */
-  formatTimestamp(timestamp) {
-    return new Date(timestamp * 1000).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return diagnosis;
   }
 
   /**
@@ -704,7 +319,6 @@ ${prompt.instruction}`;
       fallback: { success: false, error: null, model: 'Azure OpenAI' }
     };
 
-    // 测试主要模型 (Gemini)
     if (this.primaryClient) {
       try {
         const response = await this.primaryClient.chat.completions.create({
@@ -727,7 +341,6 @@ ${prompt.instruction}`;
       results.primary.error = '主要模型未配置';
     }
 
-    // 测试备用模型 (Azure OpenAI)
     if (this.fallbackClient) {
       try {
         const response = await this.fallbackClient.chat.completions.create({
@@ -750,7 +363,6 @@ ${prompt.instruction}`;
       results.fallback.error = '备用模型未配置';
     }
 
-    // 如果至少一个模型可用，返回 true
     const anyAvailable = results.primary.success || results.fallback.success;
     
     if (anyAvailable) {
@@ -766,159 +378,29 @@ ${prompt.instruction}`;
    * 获取服务状态
    */
   getStatus() {
+    const primaryConfigured = !!process.env.GEMINI_API_KEY;
+    const fallbackConfigured = !!(
+      process.env.AZURE_OPENAI_API_KEY && 
+      process.env.AZURE_OPENAI_ENDPOINT && 
+      process.env.AZURE_OPENAI_DEPLOYMENT_NAME
+    );
+    
     return {
       initialized: this.isInitialized,
       primary: {
         model: 'Gemini',
-        configured: !!this.primaryClient,
+        configured: primaryConfigured,
         apiKey: process.env.GEMINI_API_KEY ? '已配置' : '未配置',
         modelName: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
       },
       fallback: {
         model: 'Azure OpenAI',
-        configured: !!this.fallbackClient,
+        configured: fallbackConfigured,
         endpoint: process.env.AZURE_OPENAI_ENDPOINT || '未配置',
         deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || '未配置',
         apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview'
       }
     };
-  }
-
-  /**
-   * 构建结构化输出格式定义
-   * @param {string} detectedLanguage - 检测到的语言
-   */
-  buildResponseFormat(detectedLanguage = 'zh') {
-    const descriptions = {
-      'zh': {
-        formatted_summary: '完整的格式化摘要，使用正确的Telegram Markdown格式',
-        main_topics: '主要话题列表',
-        discussion_points: '重要讨论点列表',
-        activity_analysis: '群组活跃度分析',
-        special_events: '特殊事件或决定',
-        other_notes: '其他备注'
-      },
-      'en': {
-        formatted_summary: 'Complete formatted summary using correct Telegram Markdown format',
-        main_topics: 'List of main topics',
-        discussion_points: 'List of important discussion points',
-        activity_analysis: 'Group activity analysis',
-        special_events: 'Special events or decisions',
-        other_notes: 'Other notes'
-      }
-    };
-
-    const desc = descriptions[detectedLanguage] || descriptions['en'];
-
-    return {
-      type: "json_schema",
-      json_schema: {
-        name: "telegram_summary",
-        strict: true,
-        schema: {
-          type: "object",
-          properties: {
-            formatted_summary: {
-              type: "string",
-              description: desc.formatted_summary
-            },
-            main_topics: {
-              type: "array",
-              items: { type: "string" },
-              description: desc.main_topics
-            },
-            discussion_points: {
-              type: "array",
-              items: { type: "string" },
-              description: desc.discussion_points
-            },
-            activity_analysis: {
-              type: "string",
-              description: desc.activity_analysis
-            },
-            special_events: {
-              type: "string",
-              description: desc.special_events
-            },
-            other_notes: {
-              type: "string",
-              description: desc.other_notes
-            }
-          },
-          required: ["formatted_summary", "main_topics", "discussion_points", "activity_analysis", "special_events", "other_notes"],
-          additionalProperties: false
-        }
-      }
-    };
-  }
-
-  /**
-   * 格式化结构化摘要结果
-   * @param {Object} structuredResult - 结构化结果
-   * @param {string} detectedLanguage - 检测到的语言
-   */
-  formatStructuredSummary(structuredResult, detectedLanguage = 'zh') {
-    // 如果已经有格式化的摘要，直接使用
-    if (structuredResult.formatted_summary) {
-      return structuredResult.formatted_summary;
-    }
-
-    // 否则根据结构化数据生成格式化摘要
-    const templates = {
-      'zh': {
-        mainTopics: '*📌 主要话题概述*',
-        discussionPoints: '*💬 重要讨论点*',
-        activityAnalysis: '*👥 群组活跃度分析*',
-        specialEvents: '*⭐ 特殊事件或决定*',
-        otherNotes: '*🖊 其他备注*'
-      },
-      'en': {
-        mainTopics: '*📌 Main Topics Overview*',
-        discussionPoints: '*💬 Important Discussion Points*',
-        activityAnalysis: '*👥 Group Activity Analysis*',
-        specialEvents: '*⭐ Special Events or Decisions*',
-        otherNotes: '*🖊 Other Notes*'
-      }
-    };
-
-    const template = templates[detectedLanguage] || templates['en'];
-    
-    let formattedSummary = '';
-
-    // 主要话题
-    if (structuredResult.main_topics && structuredResult.main_topics.length > 0) {
-      formattedSummary += `${template.mainTopics}\n`;
-      structuredResult.main_topics.forEach(topic => {
-        formattedSummary += `• ${topic}\n`;
-      });
-      formattedSummary += '\n';
-    }
-
-    // 重要讨论点
-    if (structuredResult.discussion_points && structuredResult.discussion_points.length > 0) {
-      formattedSummary += `${template.discussionPoints}\n`;
-      structuredResult.discussion_points.forEach(point => {
-        formattedSummary += `• ${point}\n`;
-      });
-      formattedSummary += '\n';
-    }
-
-    // 群组活跃度分析
-    if (structuredResult.activity_analysis) {
-      formattedSummary += `${template.activityAnalysis}\n${structuredResult.activity_analysis}\n\n`;
-    }
-
-    // 特殊事件
-    if (structuredResult.special_events) {
-      formattedSummary += `${template.specialEvents}\n${structuredResult.special_events}\n\n`;
-    }
-
-    // 其他备注
-    if (structuredResult.other_notes) {
-      formattedSummary += `${template.otherNotes}\n${structuredResult.other_notes}`;
-    }
-
-    return formattedSummary.trim();
   }
 }
 

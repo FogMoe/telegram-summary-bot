@@ -3,6 +3,8 @@
  * 提供Markdown相关的处理功能
  */
 
+const logger = require('./logger');
+
 /**
  * 转义传统Markdown特殊字符
  * 根据Telegram传统Markdown格式要求，只转义 '_', '*', '`', '[' 字符
@@ -73,8 +75,65 @@ function stripMarkdown(text) {
     .replace(/\>/g, '');  // 移除引用标记
 }
 
+/**
+ * 预处理发往 Telegram 的 Markdown 文本，修复常见的格式问题。
+ * Telegram 的 Markdown V1 解析器非常严格，此函数旨在解决：
+ * 1. 未配对的 `*`, `_`, `` ` ``
+ * 2. `_` 字符出现在单词内部（例如 `snake_case`），这在 V1 中不被允许。
+ * 
+ * @param {string} text 要处理的 Markdown 文本
+ * @returns {string} 处理后更安全的 Markdown 文本
+ */
+function preProcessMarkdown(text) {
+  if (!text || typeof text !== 'string') {
+    return text;
+  }
+
+  let processedText = text;
+
+  // 1. 转义所有在单词内部的下划线 `_`
+  // 这可以防止 `variable_name` 这类写法导致解析错误
+  // 正则：匹配前后都是字母/数字的下划线，避免错误转义 _italic_
+  processedText = processedText.replace(/(?<=[a-zA-Z0-9])_(?=[a-zA-Z0-9])/g, '\\_');
+
+  // 2. 检查并修复未配对的 Markdown 实体
+  const entities = ['*', '_', '`'];
+  for (const char of entities) {
+    // 使用非贪婪模式匹配来计算出现次数
+    const count = (processedText.match(new RegExp(`\\${char}`, 'g')) || []).length;
+    
+    // 如果是奇数，说明有未配对的实体
+    if (count % 2 !== 0) {
+      logger.warn(`检测到未配对的 Markdown 字符 "${char}"，将进行转义处理。`);
+      // 找到最后一个，并将其转义
+      const lastIndex = processedText.lastIndexOf(char);
+      if (lastIndex !== -1) {
+        processedText = 
+          processedText.substring(0, lastIndex) + 
+          '\\' + 
+          processedText.substring(lastIndex);
+      }
+    }
+  }
+  
+  // 3. (可选) 移除用户可能不小心输入的实体嵌套
+  // V1 不支持嵌套，例如 *`text`* 是无效的。这里简化处理，移除内层。
+  processedText = processedText.replace(/\*\`(.+?)\`\*/g, '$1');
+  processedText = processedText.replace(/\_\`(.+?)\`\_/g, '$1');
+
+  if (processedText !== text) {
+    logger.info('Markdown 文本已预处理', {
+      originalLength: text.length,
+      processedLength: processedText.length
+    });
+  }
+
+  return processedText;
+}
+
 module.exports = {
   escapeMarkdown,
   escapeMarkdownV2,
-  stripMarkdown
+  stripMarkdown,
+  preProcessMarkdown
 }; 

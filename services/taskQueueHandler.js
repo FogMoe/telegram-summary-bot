@@ -5,7 +5,7 @@
 
 const cacheService = require('./cacheService');
 const logger = require('../utils/logger');
-const { escapeMarkdown, stripMarkdown } = require('../utils/markdown');
+const { escapeMarkdown, stripMarkdown, preProcessMarkdown } = require('../utils/markdown');
 
 class TaskQueueHandler {
   constructor(bot) {
@@ -148,6 +148,55 @@ class TaskQueueHandler {
   }
 
   /**
+   * 智能分割长文本为多个段落
+   * @param {string} text - 要分割的文本
+   * @param {number} maxLength - 每段最大长度
+   * @returns {Array} 分割后的文本段数组
+   */
+  splitTextIntoSegments(text, maxLength = 3500) {
+    if (text.length <= maxLength) {
+      return [text];
+    }
+
+    const segments = [];
+    let currentPos = 0;
+
+    while (currentPos < text.length) {
+      let segmentEnd = currentPos + maxLength;
+      
+      // 如果这是最后一段，直接取到结尾
+      if (segmentEnd >= text.length) {
+        segments.push(text.substring(currentPos));
+        break;
+      }
+
+      // 尝试在合适的位置分段（优先级：\n\n > \n > 。> 句号 > 空格）
+      const searchText = text.substring(currentPos, segmentEnd);
+      const breakPoints = [
+        { char: '\n\n', priority: 5 },
+        { char: '\n', priority: 4 },
+        { char: '。\n', priority: 3 },
+        { char: '。', priority: 2 },
+        { char: ' ', priority: 1 }
+      ];
+
+      let bestBreakPoint = segmentEnd;
+      for (const breakPoint of breakPoints) {
+        const lastIndex = searchText.lastIndexOf(breakPoint.char);
+        if (lastIndex > maxLength * 0.7) { // 确保不会分段太短
+          bestBreakPoint = currentPos + lastIndex + breakPoint.char.length;
+          break;
+        }
+      }
+
+      segments.push(text.substring(currentPos, bestBreakPoint));
+      currentPos = bestBreakPoint;
+    }
+
+    return segments;
+  }
+
+  /**
    * 处理任务完成事件
    */
   async handleTaskCompleted(event) {
@@ -161,85 +210,26 @@ class TaskQueueHandler {
         return;
       }
 
-      // 尝试发送原生Markdown格式
-      const response = this.formatSummaryResponse(result, false, false); // 第三个参数false表示不转义
+      // 使用预处理器增强原生Markdown的健壮性
+      const processedSummary = preProcessMarkdown(result.summary);
+      const processedResult = { ...result, summary: processedSummary };
       
-      try {
-        await this.safeSendTelegramMessage(
-          chatId,
-          messageInfo.messageId,
-          response,
-          {
-            parse_mode: 'Markdown',
-            disable_web_page_preview: true
-          }
-        );
-        
-        logger.success('总结结果已推送 (原生Markdown)', {
+      // 生成完整的响应内容
+      const fullResponse = this.formatSummaryResponse(processedResult, false, false);
+      
+      // 检查是否需要分段发送
+      if (fullResponse.length > 3500) {
+        logger.info('总结内容较长，将分段发送', {
+          totalLength: fullResponse.length,
           taskId,
-          chatId,
-          userId,
-          messageId: messageInfo.messageId
+          chatId
         });
         
-      } catch (markdownError) {
-        // 如果是网络错误，直接抛出
-        if (this.isNetworkError(markdownError)) {
-          throw markdownError;
-        }
+        await this.sendSegmentedSummary(chatId, messageInfo.messageId, fullResponse, taskId);
         
-        // 如果Markdown格式错误，尝试转义后重试
-        if (markdownError.response && 
-            markdownError.response.error_code === 400 && 
-            markdownError.response.description && 
-            markdownError.response.description.includes("can't parse entities")) {
-          
-          logger.info('Markdown格式错误，尝试转义后重试', {
-            taskId,
-            chatId,
-            error: markdownError.response.description
-          });
-          
-          // 使用转义版本重试
-          const escapedResponse = this.formatSummaryResponse(result, false, true); // 第三个参数true表示转义
-          
-          try {
-            await this.safeSendTelegramMessage(
-              chatId,
-              messageInfo.messageId,
-              escapedResponse,
-              {
-                parse_mode: 'Markdown',
-                disable_web_page_preview: true
-              }
-            );
-            
-            logger.success('使用转义Markdown格式推送总结结果', { taskId, chatId });
-            
-          } catch (escapedError) {
-            // 如果是网络错误，直接抛出
-            if (this.isNetworkError(escapedError)) {
-              throw escapedError;
-            }
-            
-            // 如果转义后仍然失败，使用纯文本
-            const plainTextResponse = this.formatPlainTextResponse(result, false);
-            
-            await this.safeSendTelegramMessage(
-              chatId,
-              messageInfo.messageId,
-              plainTextResponse,
-              {
-                disable_web_page_preview: true
-              }
-            );
-            
-            logger.info('使用纯文本格式推送总结结果', { taskId, chatId });
-          }
-          
-        } else {
-          throw markdownError;
-        }
+      } else {
+        // 内容不长，正常发送单条消息
+        await this.sendSingleSummary(chatId, messageInfo.messageId, fullResponse, taskId);
       }
       
     } catch (error) {
@@ -276,6 +266,186 @@ class TaskQueueHandler {
         // 尝试发送错误消息
         await this.sendFallbackMessage(taskId, chatId, result);
       }
+    }
+  }
+
+  /**
+   * 发送单条总结消息
+   */
+  async sendSingleSummary(chatId, messageId, response, taskId) {
+    try {
+      await this.safeSendTelegramMessage(
+        chatId,
+        messageId,
+        response,
+        {
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true
+        }
+      );
+      
+      logger.success('总结结果已推送 (单条消息)', {
+        taskId,
+        chatId,
+        messageId
+      });
+      
+    } catch (markdownError) {
+      // 如果是网络错误，直接抛出
+      if (this.isNetworkError(markdownError)) {
+        throw markdownError;
+      }
+      
+      // 如果Markdown格式错误，尝试转义后重试
+      if (markdownError.response && 
+          markdownError.response.error_code === 400 && 
+          markdownError.response.description && 
+          markdownError.response.description.includes("can't parse entities")) {
+        
+        logger.info('Markdown格式错误，尝试转义后重试', {
+          taskId,
+          chatId,
+          error: markdownError.response.description
+        });
+        
+        // 使用转义版本重试
+        const escapedResponse = this.formatSummaryResponse(
+          { summary: response.split('\n\n📊')[0] }, // 提取主要内容部分
+          false, 
+          true
+        );
+        
+        try {
+          await this.safeSendTelegramMessage(
+            chatId,
+            messageId,
+            escapedResponse,
+            {
+              parse_mode: 'Markdown',
+              disable_web_page_preview: true
+            }
+          );
+          
+          logger.success('使用转义Markdown格式推送总结结果', { taskId, chatId });
+          
+        } catch (escapedError) {
+          // 如果转义后仍然失败，使用纯文本
+          if (this.isNetworkError(escapedError)) {
+            throw escapedError;
+          }
+          
+          const plainTextResponse = this.formatPlainTextResponse(
+            { summary: response.split('\n\n📊')[0] },
+            false
+          );
+          
+          await this.safeSendTelegramMessage(
+            chatId,
+            messageId,
+            plainTextResponse,
+            {
+              disable_web_page_preview: true
+            }
+          );
+          
+          logger.info('使用纯文本格式推送总结结果', { taskId, chatId });
+        }
+      } else {
+        throw markdownError;
+      }
+    }
+  }
+
+  /**
+   * 分段发送总结消息
+   */
+  async sendSegmentedSummary(chatId, messageId, fullResponse, taskId) {
+    // 分离主要内容和统计信息
+    const parts = fullResponse.split('\n\n📊');
+    const mainContent = parts[0];
+    const statsContent = parts[1] ? '\n\n📊' + parts[1] : '';
+
+    // 分割主要内容
+    const segments = this.splitTextIntoSegments(mainContent, 3200); // 为页眉预留空间
+    
+    logger.info('开始分段发送总结', {
+      taskId,
+      chatId,
+      totalSegments: segments.length,
+      totalLength: fullResponse.length
+    });
+
+    try {
+      // 发送第一段（替换原消息）
+      const firstSegment = segments.length > 1 
+        ? `${segments[0]}\n\n📝 *总结分段发送中... (1/${segments.length})*`
+        : segments[0];
+
+      await this.safeSendTelegramMessage(
+        chatId,
+        messageId,
+        firstSegment,
+        {
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true
+        }
+      );
+
+      // 发送其余段落（新消息）
+      for (let i = 1; i < segments.length; i++) {
+        const segment = `${segments[i]}\n\n📝 *总结续篇 (${i + 1}/${segments.length})*`;
+        
+        await this.bot.telegram.sendMessage(
+          chatId,
+          segment,
+          {
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true
+          }
+        );
+
+        // 短暂延迟避免过快发送
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // 发送统计信息（如果有）
+      if (statsContent.trim()) {
+        await this.bot.telegram.sendMessage(
+          chatId,
+          statsContent,
+          {
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true
+          }
+        );
+      }
+
+      logger.success('分段总结发送完成', {
+        taskId,
+        chatId,
+        segmentsSent: segments.length,
+        hasStats: !!statsContent.trim()
+      });
+
+    } catch (segmentError) {
+      logger.error('分段发送失败，回退到截断单条消息', {
+        taskId,
+        chatId,
+        error: segmentError.message
+      });
+
+      // 回退策略：发送截断的单条消息
+      const truncatedResponse = fullResponse.substring(0, 3400) + '\n\n...(内容过长，发送时遇到问题)';
+      
+      await this.safeSendTelegramMessage(
+        chatId,
+        messageId,
+        truncatedResponse,
+        {
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true
+        }
+      );
     }
   }
 
@@ -541,9 +711,9 @@ ${errorMessage}
       response += `• 活跃用户：${userNames}\n`;
     }
     
-    if (metadata.tokensUsed) {
-      response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
-    }
+    // if (metadata.tokensUsed) {
+    //   response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
+    // }
     
     // 缓存标识
     if (fromCache) {
@@ -625,9 +795,9 @@ ${errorMessage}
       response += `• 活跃用户：${userNames}\n`;
     }
     
-    if (metadata.tokensUsed) {
-      response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
-    }
+    // if (metadata.tokensUsed) {
+    //   response += `• 字符数量：${metadata.charactersUsed || metadata.tokensUsed || 0}\n`;
+    // }
     
     // 缓存标识
     if (fromCache) {
@@ -653,13 +823,16 @@ ${errorMessage}
       return this.getNetworkErrorMessage(error);
     }
     
+    // 将错误转换为字符串以便安全检查
+    const errorString = error?.message || error?.toString() || String(error);
+    
     // 检查是否是消息过长错误
-    if (error.includes('MessageTooLongError') || error.includes('消息记录过长')) {
+    if (errorString.includes('MessageTooLongError') || errorString.includes('消息记录过长')) {
       return this.getMessageTooLongErrorMessage();
     }
     
     // 通用错误消息 - 转义错误内容
-    const errorMessage = escapeMarkdown(error.toString());
+    const errorMessage = escapeMarkdown(errorString);
     return `❌ 总结生成失败
 
 很抱歉，在生成总结时遇到了问题：

@@ -62,8 +62,8 @@ const statusCommand = async (ctx) => {
     const chatInfo = ctx.chat;
     const userInfo = ctx.from;
 
-    // 获取Azure OpenAI状态
-    const openaiStatus = aiService.getStatus();
+    // 获取AI服务状态
+    const aiStatus = aiService.getStatus();
     
     // 获取缓存统计
     const cacheStats = cacheService.getCacheStats();
@@ -106,15 +106,26 @@ const statusCommand = async (ctx) => {
     }
     statusMessage += `\n`;
 
-    // Azure OpenAI 服务状态
-    statusMessage += `🧠 *Azure OpenAI 服务*\n`;
-    statusMessage += `• 状态：${openaiStatus.initialized ? '✅ 已连接' : '❌ 未连接'}\n`;
-    if (openaiStatus.endpoint) {
-      statusMessage += `• 端点：${openaiStatus.endpoint.replace(/^https?:\/\//, '')}\n`;
-      statusMessage += `• 部署：${openaiStatus.deployment}\n`;
-      statusMessage += `• API版本：${openaiStatus.apiVersion}\n`;
+    // AI 服务状态
+    statusMessage += `🧠 *AI 服务状态*\n`;
+    statusMessage += `• 总体状态：${aiStatus.initialized ? '✅ 已初始化' : '❌ 未初始化'}\n`;
+    statusMessage += `• 自动切换：✅ 启用\n\n`;
+    
+    // 主要模型状态 (Gemini)
+    statusMessage += `🚀 *主要模型 (Gemini)*\n`;
+    statusMessage += `• 配置状态：${aiStatus.primary.configured ? '✅ 已配置' : '❌ 未配置'}\n`;
+    statusMessage += `• API密钥：${aiStatus.primary.apiKey}\n`;
+    statusMessage += `• 模型名称：${aiStatus.primary.modelName}\n\n`;
+    
+    // 备用模型状态 (Azure OpenAI)
+    statusMessage += `🔄 *备用模型 (Azure OpenAI)*\n`;
+    statusMessage += `• 配置状态：${aiStatus.fallback.configured ? '✅ 已配置' : '❌ 未配置'}\n`;
+    if (aiStatus.fallback.configured) {
+      statusMessage += `• 端点：${aiStatus.fallback.endpoint.replace(/^https?:\/\//, '')}\n`;
+      statusMessage += `• 部署：${aiStatus.fallback.deployment}\n`;
+      statusMessage += `• API版本：${aiStatus.fallback.apiVersion}\n`;
     } else {
-      statusMessage += `• 配置：❌ 未配置\n`;
+      statusMessage += `• 状态：❌ 未配置\n`;
     }
     statusMessage += `\n`;
 
@@ -179,9 +190,24 @@ const statusCommand = async (ctx) => {
     // 功能状态
     statusMessage += `⚡ *功能状态*\n`;
     statusMessage += `• 消息存储：✅ 正常\n`;
-    statusMessage += `• 总结功能：${openaiStatus.initialized ? '✅ 可用' : '❌ 不可用'}\n`;
+    statusMessage += `• 总结功能：${aiStatus.initialized ? '✅ 可用' : '❌ 不可用'}\n`;
     statusMessage += `• 缓存系统：✅ 正常\n`;
-    statusMessage += `• 任务队列：✅ 正常\n\n`;
+    statusMessage += `• 任务队列：✅ 正常\n`;
+    
+    // AI模型可用性提示
+    const primaryAvailable = aiStatus.primary.configured;
+    const fallbackAvailable = aiStatus.fallback.configured;
+    
+    if (primaryAvailable && fallbackAvailable) {
+      statusMessage += `• AI可靠性：🔥 双模型备份\n`;
+    } else if (primaryAvailable) {
+      statusMessage += `• AI可靠性：⚠️ 仅主模型可用\n`;
+    } else if (fallbackAvailable) {
+      statusMessage += `• AI可靠性：⚠️ 仅备用模型可用\n`;
+    } else {
+      statusMessage += `• AI可靠性：❌ 无可用模型\n`;
+    }
+    statusMessage += `\n`;
     
     statusMessage += `📅 报告时间：${new Date().toLocaleString('zh-CN')}`;
 
