@@ -6,8 +6,10 @@
 const messageStore = require('../storage/messageStore');
 const azureOpenAI = require('../services/azureOpenAI');
 const cacheService = require('../services/cacheService');
+const taskQueue = require('../services/taskQueue');
 const logger = require('../utils/logger');
 const { validateNumber, sanitizeInput } = require('../middleware/inputValidation');
+const { escapeMarkdown, stripMarkdown } = require('../utils/markdown');
 
 const summaryCommand = async (ctx) => {
   try {
@@ -121,30 +123,40 @@ const summaryCommand = async (ctx) => {
       
       // 发送缓存的总结结果（带错误处理）
       try {
-        return await ctx.editMessageText(formatSummaryResponse(cached, messageCount, true), {
+        // 先尝试原生Markdown格式
+        return await ctx.editMessageText(formatSummaryResponse(cached, messageCount, true, false), {
           message_id: processingMessage.message_id,
           parse_mode: 'Markdown',
           disable_web_page_preview: true
         });
       } catch (markdownError) {
-        // 如果是Markdown格式错误，尝试使用纯文本
+        // 如果是Markdown格式错误，尝试转义后重试
         if (markdownError.response && 
             markdownError.response.error_code === 400 && 
             markdownError.response.description && 
             markdownError.response.description.includes("can't parse entities")) {
           
-          logger.warn('缓存消息Markdown格式错误，尝试使用纯文本发送', {
+          logger.warn('缓存消息Markdown格式错误，尝试转义后重试', {
             chatId: ctx.chat.id,
             error: markdownError.response.description
           });
           
-          // 转换为纯文本格式
-          const plainTextResponse = formatPlainTextResponse(cached, messageCount, true);
-          
-          return await ctx.editMessageText(plainTextResponse, {
-            message_id: processingMessage.message_id,
-            disable_web_page_preview: true
-          });
+          try {
+            // 使用转义版本重试
+            return await ctx.editMessageText(formatSummaryResponse(cached, messageCount, true, true), {
+              message_id: processingMessage.message_id,
+              parse_mode: 'Markdown',
+              disable_web_page_preview: true
+            });
+          } catch (escapedError) {
+            // 如果转义后仍然失败，使用纯文本
+            const plainTextResponse = formatPlainTextResponse(cached, messageCount, true);
+            
+            return await ctx.editMessageText(plainTextResponse, {
+              message_id: processingMessage.message_id,
+              disable_web_page_preview: true
+            });
+          }
         }
         
         // 如果不是Markdown格式错误，重新抛出
@@ -191,98 +203,52 @@ const summaryCommand = async (ctx) => {
     // 标记API请求开始（只有确实要调用AI时才标记）
     cacheService.markAPIRequestStarted(ctx.chat.id, ctx.from.id);
 
-    // 使用 Azure OpenAI 生成总结
+    // 使用任务队列异步处理总结请求
     try {
-      const summaryResult = await azureOpenAI.summarizeMessages(
-        messages, 
-        stats, 
-        usersList
-      );
+      const taskId = taskQueue.addSummaryTask({
+        chatId: ctx.chat.id,
+        userId: ctx.from.id,
+        messageId: processingMessage.message_id,
+        messages,
+        stats,
+        topUsers: usersList,
+        messageCount
+      });
 
-      // 缓存总结结果
-      cacheService.setSummaryCache(
-        ctx.chat.id,
-        messageCount,
-        stats.latest_message,
-        summaryResult
-      );
+      // 立即回复用户，保持原有风格
+      await ctx.editMessageText(`🔄 正在分析群组消息...
 
-      // 发送总结结果（带错误处理）
-      try {
-        return await ctx.editMessageText(
-          formatSummaryResponse(summaryResult, messageCount, false), 
-          {
-            message_id: processingMessage.message_id,
-            parse_mode: 'Markdown',
-            disable_web_page_preview: true
-          }
-        );
-      } catch (markdownError) {
-        // 如果是Markdown格式错误，尝试使用纯文本
-        if (markdownError.response && 
-            markdownError.response.error_code === 400 && 
-            markdownError.response.description && 
-            markdownError.response.description.includes("can't parse entities")) {
-          
-          logger.warn('Markdown格式错误，尝试使用纯文本发送', {
-            chatId: ctx.chat.id,
-            error: markdownError.response.description
-          });
-          
-          // 转换为纯文本格式
-          const plainTextResponse = formatPlainTextResponse(summaryResult, messageCount, false);
-          
-          return await ctx.editMessageText(plainTextResponse, {
-            message_id: processingMessage.message_id,
-            disable_web_page_preview: true
-          });
-        }
-        
-        // 如果不是Markdown格式错误，重新抛出
-        throw markdownError;
-      }
+📊 准备总结最近 ${messageCount} 条消息
+⏳ 预计需要 10-30 秒，请稍候...
+
+💭 正在处理中，稍后自动更新结果...`, {
+        message_id: processingMessage.message_id,
+        disable_web_page_preview: true
+      });
+
+      // 存储消息ID以便后续更新
+      cacheService.setCustomCache(`task_message_${taskId}`, {
+        chatId: ctx.chat.id,
+        messageId: processingMessage.message_id,
+        userId: ctx.from.id
+      }, 15 * 60); // 15分钟过期
+
+      logger.info('总结任务已提交到队列', {
+        taskId,
+        chatId: ctx.chat.id,
+        userId: ctx.from.id,
+        messageCount
+      });
 
     } catch (error) {
-      logger.error('生成总结失败', error);
+      logger.error('提交总结任务失败', error);
       
-      // 检查是否是消息过长错误
-      if (error.name === 'MessageTooLongError') {
-        const currentChars = error.textLength;
-        const maxChars = error.maxLength;
-        const suggestedCount = Math.floor(messageCount * (maxChars / currentChars));
-        
-        logger.info('用户请求的消息记录过长', {
-          chatId: ctx.chat.id,
-          userId: ctx.from.id,
-          requestedCount: messageCount,
-          actualLength: currentChars,
-          suggestedCount: suggestedCount
-        });
-        
-        return ctx.editMessageText(`⚠️ 消息记录过长
+      return ctx.editMessageText(`❌ 任务提交失败
 
-📏 当前消息长度：${currentChars.toLocaleString()} 字符
-📏 最大允许长度：${maxChars.toLocaleString()} 字符
-
-💡 建议解决方案：
-• 减少消息数量到 ${suggestedCount} 条左右
-• 或者选择更短的时间范围进行总结
-
-🔄 请重新执行命令：
-/summary ${suggestedCount}
-
-这样可以确保总结功能正常工作。`, {
-          message_id: processingMessage.message_id,
-          disable_web_page_preview: true
-        });
-      }
-      
-      return ctx.editMessageText(`❌ 总结生成失败
-
-很抱歉，在生成总结时遇到了问题：
+很抱歉，在提交总结任务时遇到了问题：
 ${error.message}
 
-请稍后再试，或联系管理员检查 AI 服务配置。`, {
+请稍后再试，或联系管理员检查服务配置。`, {
         message_id: processingMessage.message_id,
         disable_web_page_preview: true
       });
@@ -301,16 +267,19 @@ ${error.message}
   }
 };
 
+
+
 /**
  * 格式化总结响应消息
  */
-function formatSummaryResponse(summaryResult, messageCount, fromCache) {
+function formatSummaryResponse(summaryResult, messageCount, fromCache, escape = false) {
   const { summary, metadata } = summaryResult;
   
   let response = `📋 *群组聊天总结*\n\n`;
   
-  // 总结内容
-  response += `${summary}\n\n`;
+  // 根据escape参数决定是否转义特殊字符
+  const formattedSummary = escape ? escapeMarkdown(summary) : summary;
+  response += `${formattedSummary}\n\n`;
   
   // 元数据信息
   response += `📊 *分析统计*\n`;
@@ -324,9 +293,11 @@ function formatSummaryResponse(summaryResult, messageCount, fromCache) {
   }
   
   if (metadata.topUsers && metadata.topUsers.length > 0) {
-    response += `• 活跃用户：${metadata.topUsers.slice(0, 3).map(u => 
-      u.first_name || u.username || `用户${u.user_id}`
-    ).join(', ')}\n`;
+    const userNames = metadata.topUsers.slice(0, 3).map(u => {
+      const name = u.first_name || u.username || `用户${u.user_id}`;
+      return escape ? escapeMarkdown(name) : name;
+    }).join(', ');
+    response += `• 活跃用户：${userNames}\n`;
   }
   
   if (metadata.tokensUsed) {
@@ -352,13 +323,7 @@ function formatPlainTextResponse(summaryResult, messageCount, fromCache) {
   let response = `📋 群组聊天总结\n\n`;
   
   // 移除summary中的所有Markdown标记
-  const plainSummary = summary
-    .replace(/\*/g, '')  // 移除星号
-    .replace(/\_/g, '')  // 移除下划线
-    .replace(/\`/g, '')  // 移除反引号
-    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')  // 移除链接格式，保留文本
-    .replace(/\#\#\#\#?\s/g, '')  // 移除标题标记
-    .replace(/\>/g, '');  // 移除引用标记
+  const plainSummary = stripMarkdown(summary);
   
   response += `${plainSummary}\n\n`;
   
@@ -374,9 +339,11 @@ function formatPlainTextResponse(summaryResult, messageCount, fromCache) {
   }
   
   if (metadata.topUsers && metadata.topUsers.length > 0) {
-    response += `• 活跃用户：${metadata.topUsers.slice(0, 3).map(u => 
-      u.first_name || u.username || `用户${u.user_id}`
-    ).join(', ')}\n`;
+    const userNames = metadata.topUsers.slice(0, 3).map(u => {
+      const name = u.first_name || u.username || `用户${u.user_id}`;
+      return name; // 纯文本格式不需要转义
+    }).join(', ');
+    response += `• 活跃用户：${userNames}\n`;
   }
   
   if (metadata.tokensUsed) {

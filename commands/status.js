@@ -1,12 +1,12 @@
 /**
  * Status 命令处理器
- * 显示机器人和服务状态
- * 仅限管理员使用
+ * 显示机器人运行状态、队列状态和系统信息
  */
 
 const messageStore = require('../storage/messageStore');
 const azureOpenAI = require('../services/azureOpenAI');
 const cacheService = require('../services/cacheService');
+const taskQueue = require('../services/taskQueue');
 const logger = require('../utils/logger');
 const { version } = require('../package.json');
 
@@ -55,12 +55,34 @@ const statusCommand = async (ctx) => {
 
     logger.info(`管理员 ${userName} (${userId}) 执行状态查询`);
     
-    const startTime = Date.now();
+    const startTime = process.hrtime();
     
     // 获取基本信息
     const botInfo = ctx.botInfo;
     const chatInfo = ctx.chat;
     const userInfo = ctx.from;
+
+    // 获取Azure OpenAI状态
+    const openaiStatus = azureOpenAI.getStatus();
+    
+    // 获取缓存统计
+    const cacheStats = cacheService.getCacheStats();
+    
+    // 获取任务队列状态
+    const queueStatus = taskQueue.getQueueStatus();
+    
+    // 获取群组统计（如果是群组）
+    let chatStats = null;
+    if (chatInfo.type === 'group' || chatInfo.type === 'supergroup') {
+      try {
+        chatStats = await messageStore.getChatStats(chatInfo.id);
+      } catch (error) {
+        logger.error('获取群组统计失败', error);
+      }
+    }
+
+    const endTime = process.hrtime(startTime);
+    const responseTime = (endTime[0] * 1000 + endTime[1] / 1000000).toFixed(2);
 
     let statusMessage = `🤖 *机器人状态报告*\n\n`;
     statusMessage += `👑 *执行者*：${userName} (管理员)\n\n`;
@@ -85,7 +107,6 @@ const statusCommand = async (ctx) => {
     statusMessage += `\n`;
 
     // Azure OpenAI 服务状态
-    const openaiStatus = azureOpenAI.getStatus();
     statusMessage += `🧠 *Azure OpenAI 服务*\n`;
     statusMessage += `• 状态：${openaiStatus.initialized ? '✅ 已连接' : '❌ 未连接'}\n`;
     if (openaiStatus.endpoint) {
@@ -97,43 +118,20 @@ const statusCommand = async (ctx) => {
     }
     statusMessage += `\n`;
 
-    // 如果是群组，显示消息统计
-    if (chatInfo.type === 'group' || chatInfo.type === 'supergroup') {
-      try {
-        const stats = await messageStore.getChatStats(chatInfo.id);
-        if (stats && stats.total_messages > 0) {
-          statusMessage += `📊 *群组数据统计*\n`;
-          statusMessage += `• 存储消息：${stats.total_messages} 条\n`;
-          statusMessage += `• 参与用户：${stats.unique_users} 人\n`;
-          
-          const earliestDate = new Date(stats.earliest_message * 1000).toLocaleDateString('zh-CN');
-          const latestDate = new Date(stats.latest_message * 1000).toLocaleDateString('zh-CN');
-          statusMessage += `• 时间范围：${earliestDate} - ${latestDate}\n`;
-          
-          // 获取活跃用户
-          const topUsers = await messageStore.getTopUsers(chatInfo.id, 3);
-          if (topUsers.length > 0) {
-            const userNames = topUsers.map(user => {
-              const name = user.first_name || user.username || `用户${user.user_id}`;
-              return `${name}(${user.message_count})`;
-            }).join(', ');
-            statusMessage += `• 活跃用户：${userNames}\n`;
-          }
-        } else {
-          statusMessage += `📊 *群组数据统计*\n`;
-          statusMessage += `• 存储消息：0 条\n`;
-          statusMessage += `• 状态：机器人刚加入，暂无历史数据\n`;
-        }
-        statusMessage += `\n`;
-      } catch (error) {
-        logger.error('获取群组统计失败', error);
-        statusMessage += `📊 *群组数据统计*\n`;
-        statusMessage += `• 状态：❌ 数据获取失败\n\n`;
-      }
+    // 任务队列状态
+    statusMessage += `⏳ *任务队列状态*\n`;
+    statusMessage += `• 队列长度：${queueStatus.queueLength} 个任务\n`;
+    statusMessage += `• 处理状态：${queueStatus.processing ? '🔄 处理中' : '⏸️ 空闲'}\n`;
+    statusMessage += `• 总任务数：${queueStatus.totalTasks} 个\n`;
+    
+    if (queueStatus.currentTask) {
+      statusMessage += `• 当前任务：${queueStatus.currentTask.type} (${queueStatus.currentTask.id.slice(-8)})\n`;
+      const taskAge = Math.floor((Date.now() - queueStatus.currentTask.createdAt) / 1000);
+      statusMessage += `• 处理时长：${taskAge} 秒\n`;
     }
+    statusMessage += `\n`;
 
     // 缓存服务状态
-    const cacheStats = cacheService.getCacheStats();
     statusMessage += `💾 *缓存状态*\n`;
     statusMessage += `• 总结缓存：${cacheStats.summary.keys} 项\n`;
     statusMessage += `• 统计缓存：${cacheStats.stats.keys} 项\n`;
@@ -153,8 +151,39 @@ const statusCommand = async (ctx) => {
     statusMessage += `• 内存使用：${memoryMB} MB\n`;
     statusMessage += `• Node.js 版本：${process.version}\n`;
 
-    const responseTime = Date.now() - startTime;
     statusMessage += `• 响应时间：${responseTime} ms\n`;
+
+    // 群组统计（如果在群组中）
+    if (chatStats) {
+      statusMessage += `📊 *群组数据统计*\n`;
+      statusMessage += `• 存储消息：${chatStats.total_messages} 条\n`;
+      statusMessage += `• 参与用户：${chatStats.unique_users} 人\n`;
+      
+      if (chatStats.earliest_message && chatStats.latest_message) {
+        const earliestDate = new Date(chatStats.earliest_message * 1000).toLocaleDateString('zh-CN');
+        const latestDate = new Date(chatStats.latest_message * 1000).toLocaleDateString('zh-CN');
+        statusMessage += `• 时间范围：${earliestDate} - ${latestDate}\n`;
+      }
+      
+      // 获取活跃用户
+      const topUsers = await messageStore.getTopUsers(chatInfo.id, 3);
+      if (topUsers.length > 0) {
+        const userNames = topUsers.map(user => {
+          const name = user.first_name || user.username || `用户${user.user_id}`;
+          return `${name}(${user.message_count})`;
+        }).join(', ');
+        statusMessage += `• 活跃用户：${userNames}\n`;
+      }
+    }
+
+    // 功能状态
+    statusMessage += `⚡ *功能状态*\n`;
+    statusMessage += `• 消息存储：✅ 正常\n`;
+    statusMessage += `• 总结功能：${openaiStatus.initialized ? '✅ 可用' : '❌ 不可用'}\n`;
+    statusMessage += `• 缓存系统：✅ 正常\n`;
+    statusMessage += `• 任务队列：✅ 正常\n\n`;
+    
+    statusMessage += `📅 报告时间：${new Date().toLocaleString('zh-CN')}`;
 
     // 发送状态消息
     return ctx.reply(statusMessage, {

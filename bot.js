@@ -22,6 +22,8 @@ const {
 const messageStore = require('./storage/messageStore');
 const azureOpenAI = require('./services/azureOpenAI');
 const cacheService = require('./services/cacheService');
+const taskQueue = require('./services/taskQueue');
+const TaskQueueHandler = require('./services/taskQueueHandler');
 const logger = require('./utils/logger');
 
 // 创建机器人实例
@@ -56,11 +58,20 @@ async function initializeServices() {
       logger.warn('未配置 Azure OpenAI 环境变量，总结功能将不可用');
     }
     
+    // 初始化任务队列事件监听器
+    setupTaskQueueHandlers();
+    
     logger.success('所有服务初始化完成');
   } catch (error) {
     logger.error('服务初始化失败', error);
     throw error;
   }
+}
+
+// 设置任务队列事件处理器
+function setupTaskQueueHandlers() {
+  const taskQueueHandler = new TaskQueueHandler(bot);
+  taskQueueHandler.setupEventHandlers(taskQueue);
 }
 
 // 注册中间件（按顺序执行）
@@ -169,6 +180,8 @@ function displayServiceStatus() {
   logger.info('================');
 }
 
+
+
 // 优雅停止函数
 async function gracefulShutdown(signal) {
   logger.info(`收到 ${signal} 信号，正在优雅停止...`);
@@ -199,6 +212,14 @@ async function gracefulShutdown(signal) {
     // 清理命令节流器资源
     if (commandThrottle.cleanup) {
       commandThrottle.cleanup();
+    }
+    
+    // 清理任务队列资源
+    try {
+      taskQueue.cleanup();
+      logger.info('任务队列已清理');
+    } catch (error) {
+      logger.error('清理任务队列失败', error);
     }
     
     logger.success('所有服务已优雅停止');

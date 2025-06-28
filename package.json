@@ -1,7 +1,7 @@
 {
   "name": "telegram-summary-bot",
-  "version": "1.0.5",
-  "description": "智能的 Telegram 群组聊天总结机器人，支持多语言自动检测和管理员权限控制，基于 Azure OpenAI 技术构建",
+  "version": "1.1.0",
+  "description": "智能的 Telegram 群组聊天总结机器人，支持异步处理、多语言自动检测和管理员权限控制，基于 Azure OpenAI 技术构建",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
@@ -34,7 +34,11 @@
     "chat",
     "group",
     "analysis",
-    "multilingual"
+    "multilingual",
+    "async",
+    "queue",
+    "markdown",
+    "event-driven"
   ],
   "author": "ScarletKc",
   "license": "GPL-3.0",

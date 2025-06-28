@@ -240,6 +240,7 @@ class AzureOpenAIService {
 
   /**
    * 构建系统提示词
+   * - 注意：用户名可能包含下划线等特殊字符，在提及用户时要自然表达，避免过度使用下划线和其他格式字符
    * @param {string} detectedLanguage - 检测到的群组主要语言
    */
   buildSystemPrompt(detectedLanguage = 'zh') {
@@ -308,7 +309,7 @@ class AzureOpenAIService {
 - 使用 \`代码\` 表示等宽字体
 - 使用 [链接文本](URL) 表示链接
 - 可以使用 > 引用重要观点
-- 不要使用带有 # 的标题（如 # ## ### ####）
+- 不要使用带有 # 的标题（如 # ## ### ####）而是使用 **粗体** 表示标题
 - 适当使用表情符号来增加可读性
 - 适当使用换行和空行来组织内容结构
 
