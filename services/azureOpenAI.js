@@ -301,11 +301,27 @@ class AzureOpenAIService {
 6. 总结应该简洁明了，突出重点
 7. 根据群组聊天的主要语言来回复，保持语言一致性
 
-总结格式应包括：
-- 主要话题概述
-- 重要讨论点
-- 群组活跃度分析
-- 如有特殊事件或重要决定，请特别说明`;
+格式要求：
+- 使用标准 Markdown 格式
+- 使用 **文本** 表示粗体
+- 使用 *文本* 表示斜体
+- 使用 \`代码\` 表示等宽字体
+- 使用 [链接文本](URL) 表示链接
+- 可以使用 > 引用重要观点
+- 适当使用换行和空行来组织内容结构
+
+总结应包含以下部分：
+**主要话题概述**
+对群组讨论的核心主题进行概括
+
+**重要讨论点**  
+列出关键的讨论内容和观点
+
+**群组活跃度分析**
+分析成员参与度和互动模式
+
+**特殊事件或决定**
+如有重要事件或达成的决定，请特别说明`;
   }
 
   /**
@@ -321,126 +337,126 @@ class AzureOpenAIService {
          const prompts = {
        'zh': {
          title: '请总结以下 Telegram 群组的聊天记录：',
-         statsTitle: '## 群组统计信息：',
-         analyzedMessages: '- 分析消息数：',
-         participantUsers: '- 参与用户数：',
-         timeRange: '- 时间范围：',
-         activeUsers: '- 活跃用户：',
-         chatRecords: '## 聊天记录：',
-         summaryRequest: '## 请提供总结：',
-         instruction: '请基于以上聊天记录，生成一个简洁而全面的总结，包括主要话题、重要讨论点和群组互动情况。',
+         statsTitle: '**群组统计信息**',
+         analyzedMessages: '• 分析消息数：',
+         participantUsers: '• 参与用户数：',
+         timeRange: '• 时间范围：',
+         activeUsers: '• 活跃用户：',
+         chatRecords: '**聊天记录**',
+         summaryRequest: '**请提供总结**',
+         instruction: '请基于以上聊天记录，生成一个简洁而全面的总结，使用加粗标记各部分标题，包括主要话题、重要讨论点和群组互动情况。',
          messageUnit: ' 条',
          userUnit: ' 人',
          timeTo: ' 至 '
        },
              'zh-tw': {
          title: '請總結以下 Telegram 群組的聊天記錄：',
-         statsTitle: '## 群組統計資訊：',
-         analyzedMessages: '- 分析訊息數：',
-         participantUsers: '- 參與用戶數：',
-         timeRange: '- 時間範圍：',
-         activeUsers: '- 活躍用戶：',
-         chatRecords: '## 聊天記錄：',
-         summaryRequest: '## 請提供總結：',
-         instruction: '請基於以上聊天記錄，生成一個簡潔而全面的總結，包括主要話題、重要討論點和群組互動情況。',
+         statsTitle: '**群組統計資訊**',
+         analyzedMessages: '• 分析訊息數：',
+         participantUsers: '• 參與用戶數：',
+         timeRange: '• 時間範圍：',
+         activeUsers: '• 活躍用戶：',
+         chatRecords: '**聊天記錄**',
+         summaryRequest: '**請提供總結**',
+         instruction: '請基於以上聊天記錄，生成一個簡潔而全面的總結，使用加粗標記各部分標題，包括主要話題、重要討論點和群組互動情況。',
          messageUnit: ' 條',
          userUnit: ' 人',
          timeTo: ' 至 '
        },
        'en': {
          title: 'Please summarize the following Telegram group chat records:',
-         statsTitle: '## Group Statistics:',
-         analyzedMessages: '- Messages analyzed: ',
-         participantUsers: '- Participating users: ',
-         timeRange: '- Time range: ',
-         activeUsers: '- Active users: ',
-         chatRecords: '## Chat Records:',
-         summaryRequest: '## Please provide a summary:',
-         instruction: 'Based on the above chat records, generate a concise and comprehensive summary including main topics, important discussion points, and group interaction patterns.',
+         statsTitle: '**Group Statistics**',
+         analyzedMessages: '• Messages analyzed: ',
+         participantUsers: '• Participating users: ',
+         timeRange: '• Time range: ',
+         activeUsers: '• Active users: ',
+         chatRecords: '**Chat Records**',
+         summaryRequest: '**Please provide a summary**',
+         instruction: 'Based on the above chat records, generate a concise and comprehensive summary using bold formatting for section titles, including main topics, important discussion points, and group interaction patterns.',
          messageUnit: ' messages',
          userUnit: ' users',
          timeTo: ' to '
        },
              'ja': {
          title: '以下のTelegramグループチャット記録を要約してください：',
-         statsTitle: '## グループ統計情報：',
-         analyzedMessages: '- 分析メッセージ数：',
-         participantUsers: '- 参加ユーザー数：',
-         timeRange: '- 時間範囲：',
-         activeUsers: '- アクティブユーザー：',
-         chatRecords: '## チャット記録：',
-         summaryRequest: '## 要約をお願いします：',
-         instruction: '上記のチャット記録に基づいて、主要なトピック、重要な議論点、グループの相互作用パターンを含む簡潔で包括的な要約を生成してください。',
+         statsTitle: '**グループ統計情報**',
+         analyzedMessages: '• 分析メッセージ数：',
+         participantUsers: '• 参加ユーザー数：',
+         timeRange: '• 時間範囲：',
+         activeUsers: '• アクティブユーザー：',
+         chatRecords: '**チャット記録**',
+         summaryRequest: '**要約をお願いします**',
+         instruction: '上記のチャット記録に基づいて、太字でセクションタイトルをマークして、主要なトピック、重要な議論点、グループの相互作用パターンを含む簡潔で包括的な要約を生成してください。',
          messageUnit: ' 件',
          userUnit: ' 人',
          timeTo: ' から '
        },
        'ko': {
          title: '다음 텔레그램 그룹 채팅 기록을 요약해 주세요:',
-         statsTitle: '## 그룹 통계 정보:',
-         analyzedMessages: '- 분석된 메시지 수: ',
-         participantUsers: '- 참여 사용자 수: ',
-         timeRange: '- 시간 범위: ',
-         activeUsers: '- 활성 사용자: ',
-         chatRecords: '## 채팅 기록:',
-         summaryRequest: '## 요약을 제공해 주세요:',
-         instruction: '위 채팅 기록을 바탕으로 주요 주제, 중요한 토론 포인트, 그룹 상호작용 패턴을 포함한 간결하고 포괄적인 요약을 생성해 주세요.',
+         statsTitle: '**그룹 통계 정보**',
+         analyzedMessages: '• 분석된 메시지 수: ',
+         participantUsers: '• 참여 사용자 수: ',
+         timeRange: '• 시간 범위: ',
+         activeUsers: '• 활성 사용자: ',
+         chatRecords: '**채팅 기록**',
+         summaryRequest: '**요약을 제공해 주세요**',
+         instruction: '위 채팅 기록을 바탕으로 굵은 글씨로 섹션 제목을 표시하여 주요 주제, 중요한 토론 포인트, 그룹 상호작용 패턴을 포함한 간결하고 포괄적인 요약을 생성해 주세요.',
          messageUnit: ' 개',
          userUnit: ' 명',
          timeTo: ' 부터 '
        },
              'es': {
          title: 'Por favor resume los siguientes registros de chat del grupo de Telegram:',
-         statsTitle: '## Estadísticas del Grupo:',
-         analyzedMessages: '- Mensajes analizados: ',
-         participantUsers: '- Usuarios participantes: ',
-         timeRange: '- Rango de tiempo: ',
-         activeUsers: '- Usuarios activos: ',
-         chatRecords: '## Registros de Chat:',
-         summaryRequest: '## Por favor proporciona un resumen:',
-         instruction: 'Basado en los registros de chat anteriores, genera un resumen conciso y completo que incluya temas principales, puntos de discusión importantes y patrones de interacción del grupo.',
+         statsTitle: '**Estadísticas del Grupo**',
+         analyzedMessages: '• Mensajes analizados: ',
+         participantUsers: '• Usuarios participantes: ',
+         timeRange: '• Rango de tiempo: ',
+         activeUsers: '• Usuarios activos: ',
+         chatRecords: '**Registros de Chat**',
+         summaryRequest: '**Por favor proporciona un resumen**',
+         instruction: 'Basado en los registros de chat anteriores, genera un resumen conciso y completo usando formato en negrita para los títulos de sección, que incluya temas principales, puntos de discusión importantes y patrones de interacción del grupo.',
          messageUnit: ' mensajes',
          userUnit: ' usuarios',
          timeTo: ' a '
        },
        'fr': {
          title: 'Veuillez résumer les enregistrements de chat de groupe Telegram suivants:',
-         statsTitle: '## Statistiques du Groupe:',
-         analyzedMessages: '- Messages analysés: ',
-         participantUsers: '- Utilisateurs participants: ',
-         timeRange: '- Plage de temps: ',
-         activeUsers: '- Utilisateurs actifs: ',
-         chatRecords: '## Enregistrements de Chat:',
-         summaryRequest: '## Veuillez fournir un résumé:',
-         instruction: 'Basé sur les enregistrements de chat ci-dessus, générez un résumé concis et complet incluant les sujets principaux, les points de discussion importants et les modèles d\'interaction du groupe.',
+         statsTitle: '**Statistiques du Groupe**',
+         analyzedMessages: '• Messages analysés: ',
+         participantUsers: '• Utilisateurs participants: ',
+         timeRange: '• Plage de temps: ',
+         activeUsers: '• Utilisateurs actifs: ',
+         chatRecords: '**Enregistrements de Chat**',
+         summaryRequest: '**Veuillez fournir un résumé**',
+         instruction: 'Basé sur les enregistrements de chat ci-dessus, générez un résumé concis et complet en utilisant le format gras pour les titres de section, incluant les sujets principaux, les points de discussion importants et les modèles d\'interaction du groupe.',
          messageUnit: ' messages',
          userUnit: ' utilisateurs',
          timeTo: ' à '
        },
        'de': {
          title: 'Bitte fassen Sie die folgenden Telegram-Gruppenchat-Aufzeichnungen zusammen:',
-         statsTitle: '## Gruppenstatistiken:',
-         analyzedMessages: '- Analysierte Nachrichten: ',
-         participantUsers: '- Teilnehmende Benutzer: ',
-         timeRange: '- Zeitraum: ',
-         activeUsers: '- Aktive Benutzer: ',
-         chatRecords: '## Chat-Aufzeichnungen:',
-         summaryRequest: '## Bitte geben Sie eine Zusammenfassung:',
-         instruction: 'Basierend auf den obigen Chat-Aufzeichnungen, erstellen Sie eine prägnante und umfassende Zusammenfassung mit Hauptthemen, wichtigen Diskussionspunkten und Gruppeninteraktionsmustern.',
+         statsTitle: '**Gruppenstatistiken**',
+         analyzedMessages: '• Analysierte Nachrichten: ',
+         participantUsers: '• Teilnehmende Benutzer: ',
+         timeRange: '• Zeitraum: ',
+         activeUsers: '• Aktive Benutzer: ',
+         chatRecords: '**Chat-Aufzeichnungen**',
+         summaryRequest: '**Bitte geben Sie eine Zusammenfassung**',
+         instruction: 'Basierend auf den obigen Chat-Aufzeichnungen, erstellen Sie eine prägnante und umfassende Zusammenfassung mit fett formatierter Abschnittstitel, mit Hauptthemen, wichtigen Diskussionspunkten und Gruppeninteraktionsmustern.',
          messageUnit: ' Nachrichten',
          userUnit: ' Benutzer',
          timeTo: ' bis '
        },
        'ru': {
          title: 'Пожалуйста, подведите итоги следующих записей группового чата Telegram:',
-         statsTitle: '## Статистика Группы:',
-         analyzedMessages: '- Проанализированные сообщения: ',
-         participantUsers: '- Участвующие пользователи: ',
-         timeRange: '- Временной диапазон: ',
-         activeUsers: '- Активные пользователи: ',
-         chatRecords: '## Записи Чата:',
-         summaryRequest: '## Пожалуйста, предоставьте резюме:',
-         instruction: 'Основываясь на приведенных выше записях чата, создайте краткое и всестороннее резюме, включающее основные темы, важные моменты обсуждения и модели взаимодействия группы.',
+         statsTitle: '**Статистика Группы**',
+         analyzedMessages: '• Проанализированные сообщения: ',
+         participantUsers: '• Участвующие пользователи: ',
+         timeRange: '• Временной диапазон: ',
+         activeUsers: '• Активные пользователи: ',
+         chatRecords: '**Записи Чата**',
+         summaryRequest: '**Пожалуйста, предоставьте резюме**',
+         instruction: 'Основываясь на приведенных выше записях чата, создайте краткое и всестороннее резюме, используя жирный шрифт для заголовков разделов, включающее основные темы, важные моменты обсуждения и модели взаимодействия группы.',
          messageUnit: ' сообщений',
          userUnit: ' пользователей',
          timeTo: ' до '
