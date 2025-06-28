@@ -224,6 +224,62 @@ class MessageStore {
   }
 
   /**
+   * 删除指定群组的所有消息
+   * @param {number} chatId - 群组ID
+   * @returns {Object} 删除结果统计
+   */
+  async deleteChatMessages(chatId) {
+    try {
+      // 先获取统计信息
+      const stats = await this.getChatStats(chatId);
+      
+      if (!stats || stats.total_messages === 0) {
+        return {
+          success: true,
+          deletedCount: 0,
+          message: '该群组没有存储的消息记录'
+        };
+      }
+
+      // 删除指定群组的所有消息
+      const result = await new Promise((resolve, reject) => {
+        this.db.run('DELETE FROM messages WHERE chat_id = ?', [chatId], function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve({ changes: this.changes });
+          }
+        });
+      });
+
+      // 执行 VACUUM 来回收空间
+      await this.executeQuery('VACUUM');
+
+      logger.info(`成功删除群组 ${chatId} 的所有消息`, {
+        chatId,
+        deletedCount: result.changes,
+        originalTotal: stats.total_messages
+      });
+
+      return {
+        success: true,
+        deletedCount: result.changes,
+        originalTotal: stats.total_messages,
+        message: `成功删除 ${result.changes} 条消息记录`
+      };
+
+    } catch (error) {
+      logger.error(`删除群组 ${chatId} 的消息失败`, error);
+      return {
+        success: false,
+        deletedCount: 0,
+        error: error.message,
+        message: '删除操作失败：' + error.message
+      };
+    }
+  }
+
+  /**
    * 清理旧消息
    */
   async cleanupOldMessages() {

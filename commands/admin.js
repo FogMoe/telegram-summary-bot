@@ -228,6 +228,123 @@ async function handleClearCache(ctx, args) {
 }
 
 /**
+ * 处理删除群组消息记录
+ * @param {Object} ctx - Telegraf 上下文
+ * @param {Array} args - 参数数组
+ */
+async function handleDeleteMessages(ctx, args) {
+  try {
+    let chatId = null;
+    let confirmed = false;
+
+    // 参数情况：
+    // 1) /admin delete [chatId] confirm
+    // 2) /admin delete [chatId]
+    // 3) /admin delete confirm  (当前群组)
+    // 4) /admin delete          (当前群组预览)
+
+    // 如果只传了一个参数并且是 confirm，则表示当前群组确认删除
+    if (args.length === 1 && args[0].toLowerCase() === 'confirm') {
+      confirmed = true;
+      if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+        chatId = ctx.chat.id;
+      } else {
+        return ctx.reply('❌ 私聊环境下必须指定群组ID');
+      }
+    } else {
+      // 第一个参数应为 chatId（可选）
+      if (args.length > 0) {
+        chatId = validateNumber(args[0]);
+        if (chatId === null) {
+          return ctx.reply('❌ 无效的群组ID格式');
+        }
+      } else if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+        chatId = ctx.chat.id;
+      } else {
+        return ctx.reply('❌ 请指定群组ID或在群组中执行此命令');
+      }
+
+      // 检查第二个参数是否为 confirm
+      if (args.length > 1 && args[1].toLowerCase() === 'confirm') {
+        confirmed = true;
+      }
+    }
+
+    // 如果没有确认参数，显示警告和确认信息
+    if (!confirmed) {
+      // 先获取统计信息显示给管理员
+      const stats = await messageStore.getChatStats(chatId);
+      
+      if (!stats || stats.total_messages === 0) {
+        return ctx.reply(`🗑️ *删除消息记录* (${chatId})\n\n❌ 该群组没有存储的消息记录`, {
+          parse_mode: 'Markdown'
+        });
+      }
+
+      const earliestDate = new Date(stats.earliest_message * 1000);
+      const latestDate = new Date(stats.latest_message * 1000);
+
+      let confirmCommand;
+      if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+        confirmCommand = chatId === ctx.chat.id ? 
+          `/admin delete confirm` : 
+          `/admin delete ${chatId} confirm`;
+      } else {
+        confirmCommand = `/admin delete ${chatId} confirm`;
+      }
+
+      return ctx.reply(`⚠️ *危险操作确认*
+
+📊 即将删除群组数据：
+🆔 群组ID：${chatId}
+💬 消息数量：${stats.total_messages} 条
+👥 涉及用户：${stats.unique_users} 人
+📅 时间范围：${earliestDate.toLocaleDateString('zh-CN')} - ${latestDate.toLocaleDateString('zh-CN')}
+
+🚨 *此操作不可逆！所有该群组的聊天记录将被永久删除*
+
+✅ 如需确认删除，请执行：\`${confirmCommand}\`
+❌ 如不确认则不会执行任何操作`, {
+        parse_mode: 'Markdown'
+      });
+    }
+
+    // 确认后执行删除
+    const result = await messageStore.deleteChatMessages(chatId);
+    
+    if (result.success) {
+      // 同时清除相关缓存
+      cacheService.clearChatCache(chatId);
+      
+      let message = `✅ *删除操作完成*\n\n`;
+      message += `🆔 群组ID：${chatId}\n`;
+      message += `🗑️ 删除记录：${result.deletedCount} 条\n`;
+      if (result.originalTotal) {
+        message += `📊 原始总数：${result.originalTotal} 条\n`;
+      }
+      message += `💾 缓存已清理\n`;
+      message += `⏰ 操作时间：${new Date().toLocaleString('zh-CN')}`;
+
+      logger.info(`管理员删除群组消息记录`, {
+        adminId: ctx.from.id,
+        adminName: ctx.from.first_name || ctx.from.username,
+        chatId,
+        deletedCount: result.deletedCount,
+        originalTotal: result.originalTotal
+      });
+
+      return ctx.reply(message, { parse_mode: 'Markdown' });
+    } else {
+      return ctx.reply(`❌ 删除失败：${result.message}`);
+    }
+    
+  } catch (error) {
+    logger.error('删除群组消息记录失败', error);
+    return ctx.reply('❌ 删除失败：' + error.message);
+  }
+}
+
+/**
  * 处理最近消息查询
  * @param {Object} ctx - Telegraf 上下文
  * @param {Array} args - 参数数组
@@ -298,14 +415,26 @@ function showHelp(ctx) {
 \`/admin cache\` - 查看缓存状态
 \`/admin clear [群组ID]\` - 清除缓存
 
+🗑️ **数据管理**
+\`/admin delete [群组ID] [confirm]\` - 删除群组的所有聊天记录
+
 📝 **参数说明**
 • 群组ID：可选，不填则使用当前群组
 • 数量：可选，默认值为10
+• confirm：删除命令的确认参数，必须添加才会执行删除
 
 💡 **使用示例**
 \`/admin stats\` - 查看当前群组统计
 \`/admin users -1001234567890 20\` - 查看指定群组前20名用户
-\`/admin clear\` - 清除所有缓存`;
+\`/admin clear\` - 清除所有缓存
+\`/admin delete -1001234567890\` - 预览删除信息（不会执行）
+\`/admin delete -1001234567890 confirm\` - 确认删除指定群组
+\`/admin delete confirm\` - 确认删除当前群组
+
+⚠️ **安全提示**
+• delete 命令需要添加 confirm 参数才会执行，操作不可逆
+• 删除操作会同时清除相关缓存和数据库记录
+• 仅管理员可执行此命令`;
 
   return ctx.reply(helpMessage, { parse_mode: 'Markdown' });
 }
@@ -360,6 +489,9 @@ const adminCommand = async (ctx) => {
       
       case 'clear':
         return await handleClearCache(ctx, args);
+      
+      case 'delete':
+        return await handleDeleteMessages(ctx, args);
       
       case 'help':
       default:
