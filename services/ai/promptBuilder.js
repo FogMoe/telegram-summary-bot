@@ -61,10 +61,9 @@ function buildSystemPrompt(detectedLanguage = 'zh') {
 5. 总结长度不超过4000字符
 6. 必须输出完整有效的JSON格式
 
-formatted_summary格式：
-• 在正文中不要使用任何除 [链接](https://example.com) 外的Markdown语法，只使用纯文本
+formatted_summary格式要求：
+• 在正文中禁止使用任何Markdown语法或特殊符号，只允许使用纯文本
 • 正确处理换行，确保格式清晰
-• 适当使用表情符号🔣增加可读性
 
 required结构：
 *📌 主要话题概述*
