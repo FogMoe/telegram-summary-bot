@@ -34,7 +34,9 @@ const summaryCommand = async (ctx) => {
 • 需要5分钟冷却期防止频繁调用
 • 消息数量限制：1-1000条
 
-请将我添加到群组中使用总结功能！`);
+请将我添加到群组中使用总结功能！`, {
+        disable_web_page_preview: true
+      });
     }
 
     // 解析消息数量参数
@@ -52,7 +54,9 @@ const summaryCommand = async (ctx) => {
 🔢 数量范围：1-1000
 
 💬 示例：
-/summary 100 - 总结最近100条消息`);
+/summary 100 - 总结最近100条消息`, {
+          disable_web_page_preview: true
+        });
       }
 
       messageCount = parsed;
@@ -65,7 +69,9 @@ const summaryCommand = async (ctx) => {
 
 为了避免过度使用 AI 服务，每个用户在每个群组中需要等待5分钟才能再次使用总结功能。
 
-请稍后再试。`);
+请稍后再试。`, {
+        disable_web_page_preview: true
+      });
     }
 
     // 发送处理中消息
@@ -90,7 +96,8 @@ const summaryCommand = async (ctx) => {
 这个群组还没有足够的消息可供分析。机器人会自动存储群组中的文本消息，请先进行一些聊天再尝试总结功能。
 
 💡 提示：机器人只会存储加入群组后的消息。`, {
-        message_id: processingMessage.message_id
+        message_id: processingMessage.message_id,
+        disable_web_page_preview: true
       });
     }
 
@@ -116,7 +123,8 @@ const summaryCommand = async (ctx) => {
       try {
         return await ctx.editMessageText(formatSummaryResponse(cached, messageCount, true), {
           message_id: processingMessage.message_id,
-          parse_mode: 'Markdown'
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true
         });
       } catch (markdownError) {
         // 如果是Markdown格式错误，尝试使用纯文本
@@ -134,7 +142,8 @@ const summaryCommand = async (ctx) => {
           const plainTextResponse = formatPlainTextResponse(cached, messageCount, true);
           
           return await ctx.editMessageText(plainTextResponse, {
-            message_id: processingMessage.message_id
+            message_id: processingMessage.message_id,
+            disable_web_page_preview: true
           });
         }
         
@@ -153,7 +162,8 @@ const summaryCommand = async (ctx) => {
 1. 机器人已正确加入群组
 2. 群组中有足够的文本消息
 3. 机器人有读取消息的权限`, {
-        message_id: processingMessage.message_id
+        message_id: processingMessage.message_id,
+        disable_web_page_preview: true
       });
     }
 
@@ -203,7 +213,8 @@ const summaryCommand = async (ctx) => {
           formatSummaryResponse(summaryResult, messageCount, false), 
           {
             message_id: processingMessage.message_id,
-            parse_mode: 'Markdown'
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true
           }
         );
       } catch (markdownError) {
@@ -222,7 +233,8 @@ const summaryCommand = async (ctx) => {
           const plainTextResponse = formatPlainTextResponse(summaryResult, messageCount, false);
           
           return await ctx.editMessageText(plainTextResponse, {
-            message_id: processingMessage.message_id
+            message_id: processingMessage.message_id,
+            disable_web_page_preview: true
           });
         }
         
@@ -260,7 +272,8 @@ const summaryCommand = async (ctx) => {
 /summary ${suggestedCount}
 
 这样可以确保总结功能正常工作。`, {
-          message_id: processingMessage.message_id
+          message_id: processingMessage.message_id,
+          disable_web_page_preview: true
         });
       }
       
@@ -270,7 +283,8 @@ const summaryCommand = async (ctx) => {
 ${error.message}
 
 请稍后再试，或联系管理员检查 AI 服务配置。`, {
-        message_id: processingMessage.message_id
+        message_id: processingMessage.message_id,
+        disable_web_page_preview: true
       });
     }
 
@@ -281,7 +295,9 @@ ${error.message}
 
 抱歉，执行总结命令时发生了错误。请稍后再试。
 
-如果问题持续存在，请联系管理员。`);
+如果问题持续存在，请联系管理员。`, {
+      disable_web_page_preview: true
+    });
   }
 };
 
