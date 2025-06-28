@@ -1,50 +1,85 @@
 /**
- * Azure OpenAI 服务模块
- * 提供消息总结和分析功能
+ * AI 服务模块
+ * 支持主要模型(Gemini)和备用模型(Azure OpenAI)的自动切换
  */
 
 const { AzureOpenAI } = require('openai');
+const OpenAI = require('openai');
 const logger = require('../utils/logger');
 const textUtils = require('../utils/text');
 
-class AzureOpenAIService {
+class AIService {
   constructor() {
-    this.client = null;
+    this.primaryClient = null;
+    this.fallbackClient = null;
     this.isInitialized = false;
   }
 
   /**
-   * 初始化 Azure OpenAI 客户端
+   * 初始化 AI 客户端
    */
   async init() {
     try {
-      // 验证必要的环境变量
-      const requiredEnvVars = [
-        'AZURE_OPENAI_API_KEY',
-        'AZURE_OPENAI_ENDPOINT',
-        'AZURE_OPENAI_DEPLOYMENT_NAME'
-      ];
-
-      for (const envVar of requiredEnvVars) {
-        if (!process.env[envVar]) {
-          throw new Error(`缺少必要的环境变量: ${envVar}`);
-        }
-      }
-
-      this.client = new AzureOpenAI({
-        apiKey: process.env.AZURE_OPENAI_API_KEY,
-        endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-        apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-10-01-preview',
-        deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME
-      });
+      // 初始化主要模型 (Gemini)
+      await this.initPrimaryClient();
+      
+      // 初始化备用模型 (Azure OpenAI)
+      await this.initFallbackClient();
 
       this.isInitialized = true;
-      logger.success('Azure OpenAI 服务初始化成功');
+      logger.success('AI 服务初始化成功 (主要模型: Gemini, 备用模型: Azure OpenAI)');
       
     } catch (error) {
-      logger.error('Azure OpenAI 服务初始化失败', error);
+      logger.error('AI 服务初始化失败', error);
       throw error;
     }
+  }
+
+  /**
+   * 初始化主要客户端 (Gemini API)
+   */
+  async initPrimaryClient() {
+    const requiredEnvVars = ['GEMINI_API_KEY'];
+    
+    for (const envVar of requiredEnvVars) {
+      if (!process.env[envVar]) {
+        throw new Error(`缺少必要的环境变量: ${envVar}`);
+      }
+    }
+
+    this.primaryClient = new OpenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    });
+
+    logger.info('Gemini API 客户端初始化成功');
+  }
+
+  /**
+   * 初始化备用客户端 (Azure OpenAI)
+   */
+  async initFallbackClient() {
+    const requiredEnvVars = [
+      'AZURE_OPENAI_API_KEY',
+      'AZURE_OPENAI_ENDPOINT',
+      'AZURE_OPENAI_DEPLOYMENT_NAME'
+    ];
+
+    for (const envVar of requiredEnvVars) {
+      if (!process.env[envVar]) {
+        logger.warn(`备用模型环境变量缺失: ${envVar}`);
+        return;
+      }
+    }
+
+    this.fallbackClient = new AzureOpenAI({
+      apiKey: process.env.AZURE_OPENAI_API_KEY,
+      endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+      apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview',
+      deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME
+    });
+
+    logger.info('Azure OpenAI 备用客户端初始化成功');
   }
 
   /**
@@ -52,7 +87,92 @@ class AzureOpenAIService {
    */
   ensureInitialized() {
     if (!this.isInitialized) {
-      throw new Error('Azure OpenAI 服务未初始化，请先调用 init() 方法');
+      throw new Error('AI 服务未初始化，请先调用 init() 方法');
+    }
+  }
+
+  /**
+   * 使用主要模型生成内容，失败时自动切换到备用模型
+   * @param {Object} options - 生成选项
+   * @returns {Object} 生成结果
+   */
+  async generateContentWithFallback(options) {
+    this.ensureInitialized();
+
+    // 首先尝试主要模型 (Gemini)
+    try {
+      logger.info('尝试使用主要模型 (Gemini) 生成内容');
+      
+      const primaryOptions = {
+        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+        messages: options.messages,
+        max_tokens: options.max_tokens,
+        temperature: options.temperature,
+        top_p: options.top_p
+      };
+
+      if (options.response_format) {
+        primaryOptions.response_format = options.response_format;
+      }
+
+      const response = await this.primaryClient.chat.completions.create(primaryOptions);
+      
+      logger.success('主要模型 (Gemini) 调用成功');
+      return {
+        ...response,
+        modelUsed: 'primary',
+        modelName: 'Gemini'
+      };
+
+    } catch (primaryError) {
+      logger.warn('主要模型 (Gemini) 调用失败，尝试备用模型', {
+        error: primaryError.message,
+        stack: primaryError.stack
+      });
+
+      // 如果主要模型失败，尝试备用模型 (Azure OpenAI)
+      if (!this.fallbackClient) {
+        logger.error('备用模型未配置，无法进行故障转移');
+        throw new Error('主要模型调用失败且备用模型未配置');
+      }
+
+      try {
+        logger.info('尝试使用备用模型 (Azure OpenAI) 生成内容');
+        
+        const fallbackOptions = {
+          model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
+          messages: options.messages,
+          max_tokens: options.max_tokens,
+          temperature: options.temperature,
+          top_p: options.top_p
+        };
+
+        if (options.response_format) {
+          fallbackOptions.response_format = options.response_format;
+        }
+
+        const response = await this.fallbackClient.chat.completions.create(fallbackOptions);
+        
+        logger.success('备用模型 (Azure OpenAI) 调用成功');
+        return {
+          ...response,
+          modelUsed: 'fallback',
+          modelName: 'Azure OpenAI',
+          primaryError: primaryError.message
+        };
+
+      } catch (fallbackError) {
+        logger.error('备用模型 (Azure OpenAI) 也调用失败', {
+          primaryError: primaryError.message,
+          fallbackError: fallbackError.message
+        });
+
+        // 如果两个模型都失败，抛出包含详细信息的错误
+        const error = new Error('所有AI模型都不可用');
+        error.primaryError = primaryError;
+        error.fallbackError = fallbackError;
+        throw error;
+      }
     }
   }
 
@@ -200,9 +320,8 @@ class AzureOpenAIService {
       // 定义结构化输出格式
       const responseFormat = this.buildResponseFormat(detectedLanguage);
 
-      // 调用 Azure OpenAI 使用结构化输出
-      const response = await this.client.chat.completions.create({
-        model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
+      // 使用自动切换功能调用AI模型
+      const response = await this.generateContentWithFallback({
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -580,23 +699,67 @@ ${prompt.instruction}`;
   async testConnection() {
     this.ensureInitialized();
     
-    try {
-      const response = await this.client.chat.completions.create({
-        model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
-        messages: [
-          { role: 'user', content: '请回复"连接测试成功"' }
-        ],
-        max_tokens: 50
-      });
+    const results = {
+      primary: { success: false, error: null, model: 'Gemini' },
+      fallback: { success: false, error: null, model: 'Azure OpenAI' }
+    };
 
-      const content = response.choices[0]?.message?.content;
-      logger.success('Azure OpenAI 连接测试成功', { response: content });
-      return true;
-      
-    } catch (error) {
-      logger.error('Azure OpenAI 连接测试失败', error);
-      return false;
+    // 测试主要模型 (Gemini)
+    if (this.primaryClient) {
+      try {
+        const response = await this.primaryClient.chat.completions.create({
+          model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+          messages: [
+            { role: 'user', content: '请回复"连接测试成功"' }
+          ],
+          max_tokens: 50
+        });
+
+        const content = response.choices[0]?.message?.content;
+        logger.success('Gemini API 连接测试成功', { response: content });
+        results.primary.success = true;
+        
+      } catch (error) {
+        logger.warn('Gemini API 连接测试失败', error);
+        results.primary.error = error.message;
+      }
+    } else {
+      results.primary.error = '主要模型未配置';
     }
+
+    // 测试备用模型 (Azure OpenAI)
+    if (this.fallbackClient) {
+      try {
+        const response = await this.fallbackClient.chat.completions.create({
+          model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
+          messages: [
+            { role: 'user', content: '请回复"连接测试成功"' }
+          ],
+          max_tokens: 50
+        });
+
+        const content = response.choices[0]?.message?.content;
+        logger.success('Azure OpenAI 连接测试成功', { response: content });
+        results.fallback.success = true;
+        
+      } catch (error) {
+        logger.warn('Azure OpenAI 连接测试失败', error);
+        results.fallback.error = error.message;
+      }
+    } else {
+      results.fallback.error = '备用模型未配置';
+    }
+
+    // 如果至少一个模型可用，返回 true
+    const anyAvailable = results.primary.success || results.fallback.success;
+    
+    if (anyAvailable) {
+      logger.success('AI 服务连接测试完成', { results });
+    } else {
+      logger.error('所有AI模型连接测试都失败了', { results });
+    }
+
+    return { success: anyAvailable, results };
   }
 
   /**
@@ -605,9 +768,19 @@ ${prompt.instruction}`;
   getStatus() {
     return {
       initialized: this.isInitialized,
-      endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-      deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
-      apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview'
+      primary: {
+        model: 'Gemini',
+        configured: !!this.primaryClient,
+        apiKey: process.env.GEMINI_API_KEY ? '已配置' : '未配置',
+        modelName: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+      },
+      fallback: {
+        model: 'Azure OpenAI',
+        configured: !!this.fallbackClient,
+        endpoint: process.env.AZURE_OPENAI_ENDPOINT || '未配置',
+        deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || '未配置',
+        apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview'
+      }
     };
   }
 
@@ -749,4 +922,4 @@ ${prompt.instruction}`;
   }
 }
 
-module.exports = new AzureOpenAIService(); 
+module.exports = new AIService(); 

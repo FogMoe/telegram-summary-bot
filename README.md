@@ -4,14 +4,15 @@
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen.svg)](https://nodejs.org/)
 [![GitHub Issues](https://img.shields.io/github/issues/FogMoe/telegram-summary-bot.svg)](https://github.com/FogMoe/telegram-summary-bot/issues)
 
-一个智能的 Telegram 群组聊天总结机器人，基于 Azure OpenAI，支持多语言、异步处理和多层安全防护。
+一个智能的 Telegram 群组聊天总结机器人，具备高可用性、多语言支持、异步处理和多层安全防护。
 
-> 🤖 **开源项目** | 🌍 **多语言支持** | 🧠 **AI 驱动** | 🔒 **隐私保护**
+> 🤖 **开源项目** | 🌍 **多语言支持** | 🧠 **AI 驱动** | 🔒 **隐私保护** 
 
 ## 🚀 核心功能
 
-- 🤖 智能总结，自动分析群组聊天
-- ⚡ 异步任务队列，响应迅速
+- 🤖 智能总结：自动分析群组聊天
+- 🔄 AI 高可用：主模型(Gemini)失败时自动切换至备用模型(Azure OpenAI)，详见文档
+- ⚡ 异步任务队列：响应迅速不卡顿
 - 🌍 多语言自动检测与回复
 - 📊 消息与用户分析
 - 💾 自动存储与缓存
@@ -38,7 +39,7 @@
 2. 配置环境变量：
    ```bash
    cp env.example .env
-   # 编辑 .env 文件，填写 Bot Token 和 Azure OpenAI 信息
+   # 编辑 .env 文件，填写 Bot Token 和 AI 服务信息
    ```
 3. 启动机器人：
    ```bash
@@ -46,7 +47,7 @@
    # 或开发模式 npm run dev
    ```
 
-> 详细部署、生产环境、PM2 管理、环境变量说明请见 [docs/](./docs) 目录。
+> 详细AI模型、部署、生产环境、PM2 管理、环境变量说明请见 [docs/](./docs) 目录。
 
 ## 📁 项目结构
 
@@ -68,7 +69,7 @@ telegram-summary-bot/
 
 - Node.js
 - Telegraf.js
-- Azure OpenAI (OpenAI Node.js SDK)
+- OpenAI Node.js SDK
 - SQLite3
 - node-cache
 - dotenv
@@ -80,6 +81,7 @@ telegram-summary-bot/
 
 ## 📚 更多文档
 
+- [AI模型自动切换设置指南](./docs/AI-FALLBACK-SETUP.md)
 - [详细部署与生产环境](./docs/PM2-DEPLOYMENT.md)
 - [贡献指南](./docs/CONTRIBUTING.md)
 - [更新日志](./docs/CHANGELOG.md)

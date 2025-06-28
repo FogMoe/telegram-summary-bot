@@ -113,11 +113,11 @@ class TaskQueue extends EventEmitter {
     const { chatId, userId, messages, stats, topUsers, messageCount } = task.data;
     
     try {
-      // 导入 azureOpenAI 服务
-      const azureOpenAI = require('./azureOpenAI');
+      // 导入 AI 服务
+const aiService = require('./aiService');
       
       // 生成总结
-      const summaryResult = await azureOpenAI.summarizeMessages(
+              const summaryResult = await aiService.summarizeMessages(
         messages,
         stats,
         topUsers

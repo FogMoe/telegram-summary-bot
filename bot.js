@@ -20,7 +20,7 @@ const {
 
 // 引入服务
 const messageStore = require('./storage/messageStore');
-const azureOpenAI = require('./services/azureOpenAI');
+const aiService = require('./services/aiService');
 const cacheService = require('./services/cacheService');
 const taskQueue = require('./services/taskQueue');
 const TaskQueueHandler = require('./services/taskQueueHandler');
@@ -45,10 +45,10 @@ async function initializeServices() {
     
     // 初始化 Azure OpenAI 服务（如果配置了环境变量）
     if (process.env.AZURE_OPENAI_API_KEY) {
-      await azureOpenAI.init();
+      await aiService.init();
       
       // 测试连接
-      const isConnected = await azureOpenAI.testConnection();
+      const isConnected = await aiService.testConnection();
       if (isConnected) {
         logger.success('Azure OpenAI 服务连接正常');
       } else {
@@ -166,7 +166,7 @@ function displayServiceStatus() {
   logger.info('=== 服务状态 ===');
   
   // Azure OpenAI 状态
-  const openaiStatus = azureOpenAI.getStatus();
+      const openaiStatus = aiService.getStatus();
   logger.info('Azure OpenAI:', {
     initialized: openaiStatus.initialized,
     endpoint: openaiStatus.endpoint || '未配置',

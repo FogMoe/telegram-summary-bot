@@ -37,6 +37,7 @@
    ```bash
    npm test
    npm run verify
+   npm run test-ai
    ```
 
 5. **提交更改**
