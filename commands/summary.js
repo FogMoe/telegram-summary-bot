@@ -372,7 +372,7 @@ function smartEscapeMarkdown(text) {
     // 对标题内部的下划线进行转义，保持星号不变
     const escapedTitle = match.replace(/_/g, '\\_');
     titles.push(escapedTitle);
-    return `__TITLE_PLACEHOLDER_${titleIndex++}__`;
+    return `%%TITLE_PLACEHOLDER_${titleIndex++}%%`;
   });
 
   // 转义非标题部分的特殊字符
@@ -386,7 +386,7 @@ function smartEscapeMarkdown(text) {
   // 恢复标题格式
   let finalText = escapedText;
   titles.forEach((title, index) => {
-    finalText = finalText.replace(`__TITLE_PLACEHOLDER_${index}__`, title);
+    finalText = finalText.replace(`%%TITLE_PLACEHOLDER_${index}%%`, title);
   });
 
   return finalText;
