@@ -4,8 +4,10 @@
  */
 
 const cacheService = require('./cacheService');
+const chatPermissionService = require('./chatPermissionService');
 const logger = require('../utils/logger');
 const { escapeMarkdown, stripMarkdown, preProcessMarkdown, safeMarkdownProcess } = require('../utils/markdown');
+const { isSendMessageForbiddenError, getTelegramErrorDescription } = require('../utils/telegramErrors');
 
 class TaskQueueHandler {
   constructor(bot) {
@@ -202,6 +204,15 @@ class TaskQueueHandler {
   async handleTaskCompleted(event) {
     const { taskId, chatId, userId, result } = event;
     
+    if (chatPermissionService.isChatSendRestricted(chatId)) {
+      logger.warn('群组发送权限受限，跳过推送总结结果', {
+        taskId,
+        chatId,
+        userId
+      });
+      return;
+    }
+
     try {
       // 获取原始消息信息
       const messageInfo = cacheService.getCustomCache(`task_message_${taskId}`);
@@ -233,8 +244,20 @@ class TaskQueueHandler {
       }
       
     } catch (error) {
-      // 特殊处理网络连接错误
-      if (this.isNetworkError(error)) {
+      // 特殊处理权限错误
+      if (isSendMessageForbiddenError(error)) {
+        const description = getTelegramErrorDescription(error);
+        chatPermissionService.markChatSendRestricted(chatId, description);
+        
+        logger.warn('总结结果推送失败：缺少发送权限', {
+          taskId,
+          chatId,
+          userId,
+          error: description
+        });
+        return;
+      } else if (this.isNetworkError(error)) {
+        // 特殊处理网络连接错误
         logger.error('网络连接错误，总结结果推送失败', {
           taskId,
           chatId,
@@ -514,6 +537,15 @@ class TaskQueueHandler {
   async handleTaskFailed(event) {
     const { taskId, chatId, userId, error } = event;
     
+    if (chatPermissionService.isChatSendRestricted(chatId)) {
+      logger.warn('群组发送权限受限，跳过任务失败通知', {
+        taskId,
+        chatId,
+        userId
+      });
+      return;
+    }
+
     try {
       // 调试日志：记录接收到的错误对象
       logger.debug('处理任务失败事件', {
@@ -547,7 +579,16 @@ class TaskQueueHandler {
       logger.info('任务失败消息已推送', { taskId, chatId, userId });
       
     } catch (sendError) {
-      if (this.isNetworkError(sendError)) {
+      if (isSendMessageForbiddenError(sendError)) {
+        const description = getTelegramErrorDescription(sendError);
+        chatPermissionService.markChatSendRestricted(chatId, description);
+        logger.warn('任务失败消息推送失败：缺少发送权限', {
+          taskId,
+          chatId,
+          userId,
+          error: description
+        });
+      } else if (this.isNetworkError(sendError)) {
         logger.error('网络连接错误，无法推送任务失败消息', {
           taskId,
           chatId,
@@ -595,6 +636,17 @@ class TaskQueueHandler {
         }, { taskId, chatId, operation: 'sendNetworkErrorMessage' });
       }
     } catch (fallbackError) {
+      if (isSendMessageForbiddenError(fallbackError)) {
+        const description = getTelegramErrorDescription(fallbackError);
+        chatPermissionService.markChatSendRestricted(chatId, description);
+        logger.warn('发送网络错误消息失败：缺少发送权限', {
+          taskId,
+          chatId,
+          error: description
+        });
+        return;
+      }
+
       logger.error('发送网络错误消息也失败了', {
         taskId,
         chatId,
@@ -623,6 +675,17 @@ class TaskQueueHandler {
         );
       }
     } catch (fallbackError) {
+      if (isSendMessageForbiddenError(fallbackError)) {
+        const description = getTelegramErrorDescription(fallbackError);
+        chatPermissionService.markChatSendRestricted(chatId, description);
+        logger.warn('发送内容过滤错误消息失败：缺少发送权限', {
+          taskId,
+          chatId,
+          error: description
+        });
+        return;
+      }
+
       logger.error('发送内容过滤错误消息也失败了', {
         taskId,
         chatId,
@@ -656,6 +719,17 @@ class TaskQueueHandler {
         logger.info('已发送回退错误消息', { taskId, chatId, messageCount });
       }
     } catch (fallbackError) {
+      if (isSendMessageForbiddenError(fallbackError)) {
+        const description = getTelegramErrorDescription(fallbackError);
+        chatPermissionService.markChatSendRestricted(chatId, description);
+        logger.warn('发送回退错误消息失败：缺少发送权限', {
+          taskId,
+          chatId,
+          error: description
+        });
+        return;
+      }
+
       logger.error('发送回退错误消息也失败了', {
         taskId,
         chatId,

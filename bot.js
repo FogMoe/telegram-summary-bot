@@ -25,14 +25,21 @@ const cacheService = require('./services/cacheService');
 const taskQueue = require('./services/taskQueue');
 const TaskQueueHandler = require('./services/taskQueueHandler');
 const logger = require('./utils/logger');
+const { safeReply } = require('./utils/telegramSafety');
 
 // 创建机器人实例
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // 全局错误处理
-bot.catch((err, ctx) => {
-  logger.error(`处理更新时发生错误 ${ctx.update.update_id}`, err);
-  ctx.reply('抱歉，处理您的请求时发生了错误，请稍后再试。');
+bot.catch(async (err, ctx) => {
+  const updateId = ctx?.update?.update_id;
+  logger.error(`处理更新时发生错误 ${updateId}`, err);
+
+  if (!ctx) {
+    return;
+  }
+
+  await safeReply(ctx, '抱歉，处理您的请求时发生了错误，请稍后再试。');
 });
 
 // 初始化服务

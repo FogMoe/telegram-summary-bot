@@ -7,15 +7,17 @@ const messageStore = require('../storage/messageStore');
 const aiService = require('../services/aiService');
 const cacheService = require('../services/cacheService');
 const taskQueue = require('../services/taskQueue');
+const chatPermissionService = require('../services/chatPermissionService');
 const logger = require('../utils/logger');
 const { validateNumber, sanitizeInput } = require('../middleware/inputValidation');
 const { escapeMarkdown, stripMarkdown, safeMarkdownProcess } = require('../utils/markdown');
+const { safeReply, safeEditMessageText } = require('../utils/telegramSafety');
 
 const summaryCommand = async (ctx) => {
   try {
     // 检查是否在群组中
     if (ctx.chat.type === 'private') {
-      return ctx.reply(`📝 Summary 命令使用说明
+      return await safeReply(ctx, `📝 Summary 命令使用说明
 
 🔧 在群组中使用：
 • /summary - 显示此帮助信息
@@ -41,6 +43,15 @@ const summaryCommand = async (ctx) => {
       });
     }
 
+    if (chatPermissionService.isChatSendRestricted(ctx.chat.id)) {
+      logger.warn('检测到群组发送权限受限，忽略 summary 命令', {
+        chatId: ctx.chat.id,
+        userId: ctx.from.id,
+        updateId: ctx.update?.update_id
+      });
+      return;
+    }
+
     // 解析消息数量参数
     const payload = sanitizeInput(ctx.payload?.trim() || '');
     let messageCount = 100; // 默认100条消息
@@ -48,7 +59,7 @@ const summaryCommand = async (ctx) => {
     if (payload) {
       const parsed = validateNumber(payload, 1, 1000);
       if (parsed === null) {
-        return ctx.reply(`❌ 参数错误！请输入有效的数字。
+        return await safeReply(ctx, `❌ 参数错误！请输入有效的数字。
 
 📝 正确格式：
 /summary <数量>
@@ -67,7 +78,7 @@ const summaryCommand = async (ctx) => {
     // 检查API请求频率限制
     if (!cacheService.canMakeAPIRequest(ctx.chat.id, ctx.from.id)) {
       const remainingTime = 5; // 简化显示
-      return ctx.reply(`⏰ 请求过于频繁！
+      return await safeReply(ctx, `⏰ 请求过于频繁！
 
 为了避免过度使用 AI 服务，每个用户在每个群组中需要等待5分钟才能再次使用总结功能。
 
@@ -77,10 +88,19 @@ const summaryCommand = async (ctx) => {
     }
 
     // 发送处理中消息
-    const processingMessage = await ctx.reply(`🔄 正在分析群组消息...
+    const processingMessage = await safeReply(ctx, `🔄 正在分析群组消息...
 
 📊 准备总结最近 ${messageCount} 条消息
 ⏳ 预计需要 10-30 秒，请稍候...`);
+
+    if (!processingMessage) {
+      logger.warn('无法发送处理中提示消息，summary 命令提前结束', {
+        chatId: ctx.chat.id,
+        userId: ctx.from.id,
+        updateId: ctx.update?.update_id
+      });
+      return;
+    }
 
     // 获取群组统计信息（先检查缓存）
     let stats = cacheService.getStatsCache(ctx.chat.id);
@@ -93,7 +113,7 @@ const summaryCommand = async (ctx) => {
 
     // 检查是否有足够的消息
     if (!stats || stats.total_messages === 0) {
-      return ctx.editMessageText(`📭 暂无聊天记录
+      return await safeEditMessageText(ctx, `📭 暂无聊天记录
 
 这个群组还没有足够的消息可供分析。机器人会自动存储群组中的文本消息，请先进行一些聊天再尝试总结功能。
 
@@ -124,7 +144,7 @@ const summaryCommand = async (ctx) => {
       // 发送缓存的总结结果（带错误处理）
       try {
         // 先尝试原生Markdown格式
-        return await ctx.editMessageText(formatSummaryResponse(cached, messageCount, true, false), {
+        return await safeEditMessageText(ctx, formatSummaryResponse(cached, messageCount, true, false), {
           message_id: processingMessage.message_id,
           parse_mode: 'Markdown',
           disable_web_page_preview: true
@@ -145,7 +165,7 @@ const summaryCommand = async (ctx) => {
           try {
             // 使用转义版本重试
             const escapedResponse = formatSummaryResponse(cached, messageCount, true, true);
-            return await ctx.editMessageText(escapedResponse, {
+            return await safeEditMessageText(ctx, escapedResponse, {
               message_id: processingMessage.message_id,
               parse_mode: 'Markdown',
               disable_web_page_preview: true
@@ -170,7 +190,7 @@ const summaryCommand = async (ctx) => {
                 };
                 const safeResponse = formatSummaryResponse(safeCached, messageCount, true, false);
                 
-                return await ctx.editMessageText(safeResponse, {
+                return await safeEditMessageText(ctx, safeResponse, {
                   message_id: processingMessage.message_id,
                   parse_mode: 'Markdown',
                   disable_web_page_preview: true
@@ -187,7 +207,7 @@ const summaryCommand = async (ctx) => {
             // 最终回退：使用纯文本
             const plainTextResponse = formatPlainTextResponse(cached, messageCount, true);
             
-            return await ctx.editMessageText(plainTextResponse, {
+            return await safeEditMessageText(ctx, plainTextResponse, {
               message_id: processingMessage.message_id,
               disable_web_page_preview: true
             });
@@ -203,7 +223,7 @@ const summaryCommand = async (ctx) => {
     const messages = await messageStore.getRecentMessages(ctx.chat.id, messageCount);
     
     if (messages.length === 0) {
-      return ctx.editMessageText(`📭 未找到消息记录
+      return await safeEditMessageText(ctx, `📭 未找到消息记录
 
 无法获取群组的聊天记录。请确保：
 1. 机器人已正确加入群组
@@ -251,7 +271,7 @@ const summaryCommand = async (ctx) => {
       });
 
       // 立即回复用户，保持原有风格
-      await ctx.editMessageText(`🔄 正在分析群组消息...
+      await safeEditMessageText(ctx, `🔄 正在分析群组消息...
 
 📊 准备总结最近 ${messageCount} 条消息
 ⏳ 预计需要 10-30 秒，请稍候...
@@ -278,7 +298,7 @@ const summaryCommand = async (ctx) => {
     } catch (error) {
       logger.error('提交总结任务失败', error);
       
-      return ctx.editMessageText(`❌ 任务提交失败
+      return await safeEditMessageText(ctx, `❌ 任务提交失败
 
 很抱歉，在提交总结任务时遇到了问题：
 ${error.message}
@@ -292,13 +312,15 @@ ${error.message}
   } catch (error) {
     logger.error('Summary 命令执行失败', error);
     
-    return ctx.reply(`❌ 命令执行失败
+    await safeReply(ctx, `❌ 命令执行失败
 
 抱歉，执行总结命令时发生了错误。请稍后再试。
 
 如果问题持续存在，请联系管理员。`, {
       disable_web_page_preview: true
     });
+
+    return;
   }
 };
 
