@@ -89,8 +89,7 @@ function repairTruncatedJson(truncatedJson) {
     
     // 构建一个最小有效的JSON结构
     const requiredFields = [
-      'formatted_summary',
-      'main_topics', 
+      'main_topics',
       'discussion_points',
       'activity_analysis',
       'special_events',
@@ -116,9 +115,8 @@ function repairTruncatedJson(truncatedJson) {
     
     // 为缺失的字段提供默认值
     const defaultValues = {
-      formatted_summary: '"*📌 内容总结*\\n\\n由于响应被截断，无法生成完整总结。请重试获取完整内容。"',
       main_topics: '["响应截断"]',
-      discussion_points: '["内容不完整"]', 
+      discussion_points: '["内容不完整"]',
       activity_analysis: '"响应被截断，无法分析"',
       special_events: '"无"',
       other_notes: '"请重新尝试获取完整总结"'
@@ -147,7 +145,6 @@ function repairTruncatedJson(truncatedJson) {
     
     // 应急方案：返回一个基本的有效JSON
     return `{
-      "formatted_summary": "*📌 系统提示*\\n\\n响应内容被截断，无法生成完整总结。\\n\\n💡 建议：\\n• 重新执行 /summary 命令\\n• 尝试总结更少的消息",
       "main_topics": ["系统错误"],
       "discussion_points": ["响应截断"],
       "activity_analysis": "由于技术问题无法分析",
@@ -173,39 +170,7 @@ function extractSummaryFromFailedJson(failedJson) {
       jsonPreview: failedJson.substring(0, 200) 
     });
     
-    // 方法1: 尝试提取formatted_summary字段的内容（支持多行）
-    const summaryPatterns = [
-      /"formatted_summary"\s*:\s*"((?:[^"\\]|\\.|\\n)*?)"/,  // 标准格式
-      /"formatted_summary"\s*:\s*"([^"]*)/,                   // 不完整的字符串
-      /formatted_summary[^:]*:\s*"?([^"]*)/i                  // 松散匹配
-    ];
-    
-    for (const pattern of summaryPatterns) {
-      const match = failedJson.match(pattern);
-      if (match && match[1] && match[1].trim().length > 20) {
-        let extractedContent = match[1];
-        
-        // 清理转义字符和格式
-        extractedContent = extractedContent
-          .replace(/\\"/g, '"')
-          .replace(/\\n/g, '\n')
-          .replace(/\\t/g, ' ')
-          .replace(/\\\\/g, '\\')
-          .replace(/^\s+|\s+$/g, ''); // 去除首尾空白
-          
-        // 如果内容看起来是合理的总结
-        if (extractedContent.includes('*') || extractedContent.includes('📌') || 
-            extractedContent.includes('💬') || extractedContent.length > 30) {
-          logger.info('从失败JSON中成功提取总结内容', {
-            extractedLength: extractedContent.length,
-            preview: extractedContent.substring(0, 100)
-          });
-          return extractedContent;
-        }
-      }
-    }
-    
-    // 方法2: 尝试构建基本的总结结构
+    // 方法1: 尝试构建基本的总结结构
     const extractedParts = {};
     
     // 提取各个字段
@@ -224,42 +189,45 @@ function extractSummaryFromFailedJson(failedJson) {
       }
     }
     
-    // 如果提取到足够的内容，重新构建总结
+    // 如果提取到足够的内容，重新构建概要文本（纯文本）
     if (Object.keys(extractedParts).length >= 2) {
-      let reconstructed = '*📌 总结内容 (部分恢复)*\n\n';
+      const parts = [];
       
       if (extractedParts.main_topics) {
-        reconstructed += '*💬 主要话题*\n';
-        // 清理数组格式
         const topics = extractedParts.main_topics
           .replace(/["\[\]]/g, '')
           .split(',')
           .filter(t => t.trim().length > 0)
-          .map(t => `• ${t.trim()}`);
-        reconstructed += topics.join('\n') + '\n\n';
+          .map(t => `- ${t.trim()}`);
+        if (topics.length) {
+          parts.push(`主要话题:\n${topics.join('\n')}`);
+        }
       }
       
       if (extractedParts.discussion_points) {
-        reconstructed += '*💭 讨论要点*\n';
         const points = extractedParts.discussion_points
           .replace(/["\[\]]/g, '')
           .split(',')
           .filter(p => p.trim().length > 0)
-          .map(p => `• ${p.trim()}`);
-        reconstructed += points.join('\n') + '\n\n';
+          .map(p => `- ${p.trim()}`);
+        if (points.length) {
+          parts.push(`讨论要点:\n${points.join('\n')}`);
+        }
       }
       
       if (extractedParts.activity_analysis) {
-        reconstructed += `*👥 活跃度分析*\n${extractedParts.activity_analysis}\n\n`;
+        parts.push(`活跃度分析:\n${extractedParts.activity_analysis}`);
       }
       
       if (extractedParts.special_events) {
-        reconstructed += `*⭐ 特殊事件*\n${extractedParts.special_events}\n\n`;
+        parts.push(`特殊事件:\n${extractedParts.special_events}`);
       }
       
       if (extractedParts.other_notes) {
-        reconstructed += `*📝 其他备注*\n${extractedParts.other_notes}`;
+        parts.push(`其他备注:\n${extractedParts.other_notes}`);
       }
+      
+      const reconstructed = parts.join('\n\n');
       
       logger.info('成功重构部分总结内容', { 
         fieldsExtracted: Object.keys(extractedParts).length,
@@ -277,11 +245,11 @@ function extractSummaryFromFailedJson(failedJson) {
       
     if (textContent.length > 100 && (textContent.includes('话题') || textContent.includes('讨论') || textContent.includes('活跃'))) {
       logger.info('提取到文本内容作为回退');
-      return `*📌 总结内容 (文本提取)*\n\n${textContent.substring(0, 500)}${textContent.length > 500 ? '...' : ''}`;
+      return `文本提取内容：${textContent.substring(0, 500)}${textContent.length > 500 ? '...' : ''}`;
     }
     
     // 如果都没有找到，返回友好的错误消息
-    return `❌ 总结格式解析失败\n\n正在处理您的请求时遇到了技术问题。\n请稍后重试，或尝试减少消息数量。\n\n💡 建议：\n• 重新执行 /summary 命令\n• 尝试总结更少的消息\n• 如果问题持续，请联系管理员`;
+    return `总结解析失败，请稍后重试或尝试减少消息数量。`;
     
   } catch (error) {
     logger.error('提取失败JSON内容时发生错误', error);
@@ -295,10 +263,28 @@ function extractSummaryFromFailedJson(failedJson) {
  * @param {string} detectedLanguage - 检测到的语言
  */
 function formatStructuredSummary(structuredResult, detectedLanguage = 'zh') {
-  // 如果已经有格式化的摘要，直接使用
-  if (structuredResult.formatted_summary) {
-    return structuredResult.formatted_summary;
-  }
+  const normalizeList = (value) => {
+    if (Array.isArray(value)) {
+      return value
+        .map(item => {
+          if (item === null || item === undefined) {
+            return '';
+          }
+          if (typeof item === 'string') {
+            return item.trim();
+          }
+          return JSON.stringify(item);
+        })
+        .filter(item => item && item.trim().length > 0);
+    }
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return [value.trim()];
+    }
+    if (value === null || value === undefined) {
+      return [];
+    }
+    return [String(value)];
+  };
 
   // 否则根据结构化数据生成格式化摘要
   const templates = {
@@ -323,18 +309,20 @@ function formatStructuredSummary(structuredResult, detectedLanguage = 'zh') {
   let formattedSummary = '';
 
   // 主要话题
-  if (structuredResult.main_topics && structuredResult.main_topics.length > 0) {
+  const mainTopics = normalizeList(structuredResult.main_topics);
+  if (mainTopics.length > 0) {
     formattedSummary += `${template.mainTopics}\n`;
-    structuredResult.main_topics.forEach(topic => {
+    mainTopics.forEach(topic => {
       formattedSummary += `• ${topic}\n`;
     });
     formattedSummary += '\n';
   }
 
   // 重要讨论点
-  if (structuredResult.discussion_points && structuredResult.discussion_points.length > 0) {
+  const discussionPoints = normalizeList(structuredResult.discussion_points);
+  if (discussionPoints.length > 0) {
     formattedSummary += `${template.discussionPoints}\n`;
-    structuredResult.discussion_points.forEach(point => {
+    discussionPoints.forEach(point => {
       formattedSummary += `• ${point}\n`;
     });
     formattedSummary += '\n';

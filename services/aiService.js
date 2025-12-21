@@ -18,6 +18,36 @@ class AIService {
     this.isInitialized = false;
   }
 
+  async withTimeout(promise, timeoutMs, label) {
+    if (!timeoutMs) {
+      return promise;
+    }
+
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        const error = new Error(`${label} request timeout after ${timeoutMs}ms`);
+        error.code = 'AI_REQUEST_TIMEOUT';
+        reject(error);
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  ensureResponseContent(response, label) {
+    const content = response?.choices?.[0]?.message?.content;
+    if (!content || !content.trim()) {
+      const error = new Error(`${label} returned empty content`);
+      error.code = 'AI_EMPTY_RESPONSE';
+      throw error;
+    }
+  }
+
   getPrimaryModel() {
     return process.env.PRIMARY_MODEL || 'gpt-4o-mini';
   }
@@ -73,7 +103,12 @@ class AIService {
         primaryOptions.response_format = options.response_format;
       }
 
-      const response = await this.primaryClient.chat.completions.create(primaryOptions);
+      const response = await this.withTimeout(
+        this.primaryClient.chat.completions.create(primaryOptions),
+        AI_LIMITS.PRIMARY_TIMEOUT_MS,
+        'Primary API'
+      );
+      this.ensureResponseContent(response, 'Primary API');
       
       logger.success('主要 API 调用成功');
       return {
@@ -109,7 +144,12 @@ class AIService {
           fallbackOptions.response_format = options.response_format;
         }
 
-        const response = await this.fallbackClient.chat.completions.create(fallbackOptions);
+        const response = await this.withTimeout(
+          this.fallbackClient.chat.completions.create(fallbackOptions),
+          AI_LIMITS.FALLBACK_TIMEOUT_MS,
+          'Fallback API'
+        );
+        this.ensureResponseContent(response, 'Fallback API');
         
         logger.success('备用 API 调用成功');
         return {
@@ -250,12 +290,11 @@ class AIService {
           const extractedSummary = extractSummaryFromFailedJson(rawContent);
           
           structuredResult = {
-            formatted_summary: extractedSummary,
             main_topics: [],
             discussion_points: [],
             activity_analysis: '',
             special_events: '',
-            other_notes: ''
+            other_notes: extractedSummary
           };
         }
       }
@@ -330,15 +369,23 @@ class AIService {
 
     if (this.primaryClient) {
       try {
-        const response = await this.primaryClient.chat.completions.create({
-          model: this.getPrimaryModel(),
-          messages: [
-            { role: 'user', content: '请回复"连接测试成功"' }
-          ],
-          max_tokens: 50
-        });
+        const response = await this.withTimeout(
+          this.primaryClient.chat.completions.create({
+            model: this.getPrimaryModel(),
+            messages: [
+              { role: 'user', content: '请回复"连接测试成功"' }
+            ],
+            max_tokens: 50
+          }),
+          AI_LIMITS.PRIMARY_TIMEOUT_MS,
+          'Primary API'
+        );
 
-        const content = response.choices[0]?.message?.content;
+        const content = response?.choices?.[0]?.message?.content?.trim();
+        if (!content) {
+          throw new Error('Primary API returned empty content');
+        }
+
         logger.success('主要 API 连接测试成功', { response: content });
         results.primary.success = true;
         
@@ -352,15 +399,23 @@ class AIService {
 
     if (this.fallbackClient) {
       try {
-        const response = await this.fallbackClient.chat.completions.create({
-          model: this.getFallbackModel(),
-          messages: [
-            { role: 'user', content: '请回复"连接测试成功"' }
-          ],
-          max_tokens: 50
-        });
+        const response = await this.withTimeout(
+          this.fallbackClient.chat.completions.create({
+            model: this.getFallbackModel(),
+            messages: [
+              { role: 'user', content: '请回复"连接测试成功"' }
+            ],
+            max_tokens: 50
+          }),
+          AI_LIMITS.FALLBACK_TIMEOUT_MS,
+          'Fallback API'
+        );
 
-        const content = response.choices[0]?.message?.content;
+        const content = response?.choices?.[0]?.message?.content?.trim();
+        if (!content) {
+          throw new Error('Fallback API returned empty content');
+        }
+
         logger.success('备用 API 连接测试成功', { response: content });
         results.fallback.success = true;
         
