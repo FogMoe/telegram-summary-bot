@@ -96,19 +96,19 @@ const statusCommand = async (ctx) => {
     statusMessage += `• 总体状态：${aiStatus.initialized ? '✅ 已初始化' : '❌ 未初始化'}\n`;
     statusMessage += `• 自动切换：✅ 启用\n\n`;
     
-    // 主要模型状态 (Gemini)
-    statusMessage += `🚀 *主要模型 (Gemini)*\n`;
+    // 主要 API 状态
+    statusMessage += `🚀 *主要 API*\n`;
     statusMessage += `• 配置状态：${aiStatus.primary.configured ? '✅ 已配置' : '❌ 未配置'}\n`;
     statusMessage += `• API密钥：${aiStatus.primary.apiKey}\n`;
+    statusMessage += `• BaseURL：${aiStatus.primary.baseUrl}\n`;
     statusMessage += `• 模型名称：${aiStatus.primary.modelName}\n\n`;
     
-    // 备用模型状态 (Azure OpenAI)
-    statusMessage += `🔄 *备用模型 (Azure OpenAI)*\n`;
+    // 备用 API 状态
+    statusMessage += `🔄 *备用 API*\n`;
     statusMessage += `• 配置状态：${aiStatus.fallback.configured ? '✅ 已配置' : '❌ 未配置'}\n`;
     if (aiStatus.fallback.configured) {
-      statusMessage += `• 端点：${aiStatus.fallback.endpoint.replace(/^https?:\/\//, '')}\n`;
-      statusMessage += `• 部署：${aiStatus.fallback.deployment}\n`;
-      statusMessage += `• API版本：${aiStatus.fallback.apiVersion}\n`;
+      statusMessage += `• BaseURL：${aiStatus.fallback.baseUrl}\n`;
+      statusMessage += `• 模型名称：${aiStatus.fallback.modelName}\n`;
     } else {
       statusMessage += `• 状态：❌ 未配置\n`;
     }
@@ -186,9 +186,9 @@ const statusCommand = async (ctx) => {
     if (primaryAvailable && fallbackAvailable) {
       statusMessage += `• AI可靠性：🔥 双模型备份\n`;
     } else if (primaryAvailable) {
-      statusMessage += `• AI可靠性：⚠️ 仅主模型可用\n`;
+      statusMessage += `• AI可靠性：⚠️ 仅主 API 可用\n`;
     } else if (fallbackAvailable) {
-      statusMessage += `• AI可靠性：⚠️ 仅备用模型可用\n`;
+      statusMessage += `• AI可靠性：⚠️ 仅备用 API 可用\n`;
     } else {
       statusMessage += `• AI可靠性：❌ 无可用模型\n`;
     }

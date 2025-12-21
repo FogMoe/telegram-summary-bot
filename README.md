@@ -11,7 +11,7 @@
 ## 🚀 核心功能
 
 - 🤖 智能总结：自动分析群组聊天
-- 🔄 AI 高可用：主模型(Gemini)失败时自动切换至备用模型(Azure OpenAI)，详见文档
+- 🔄 AI 高可用：主 API 失败时自动切换至备用 API（OpenAI 兼容），详见文档
 - ⚡ 异步任务队列：响应迅速不卡顿
 - 🌍 多语言自动检测与回复
 - 📊 消息与用户分析
@@ -69,7 +69,7 @@ telegram-summary-bot/
 
 - Node.js
 - Telegraf.js
-- OpenAI Node.js SDK
+- OpenAI 兼容 API（OpenAI Node.js SDK）
 - SQLite3
 - node-cache
 - dotenv

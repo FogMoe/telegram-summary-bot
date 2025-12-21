@@ -35,9 +35,9 @@ This is a Telegram bot with an event-driven, middleware-based architecture featu
 
 **AI Service with Fallback System**
 The bot implements a resilient AI service pattern:
-- **Primary Model**: Gemini (Google's AI)
-- **Fallback Model**: Azure OpenAI
-- **Auto-switching**: Automatically falls back to Azure OpenAI if Gemini fails
+- **Primary API**: OpenAI-compatible API (configurable)
+- **Fallback API**: OpenAI-compatible API (configurable)
+- **Auto-switching**: Automatically falls back to the backup API if the primary fails
 - **Service Class**: `AIService` in `services/aiService.js` manages both clients
 - **Client Factory**: `services/ai/clientFactory.js` initializes AI clients
 
@@ -79,8 +79,12 @@ Applied in this order:
 ### Environment Variables
 Required for AI functionality:
 - `BOT_TOKEN` - Telegram bot token
-- `GEMINI_API_KEY` - Google Gemini API key (primary model)
-- `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT_NAME` - Azure OpenAI (fallback)
+- `PRIMARY_API_KEY` - Primary OpenAI-compatible API key
+- `PRIMARY_API_BASE_URL` - Optional primary API base URL
+- `PRIMARY_MODEL` - Primary model name
+- `FALLBACK_API_KEY` - Fallback OpenAI-compatible API key
+- `FALLBACK_API_BASE_URL` - Optional fallback API base URL
+- `FALLBACK_MODEL` - Fallback model name
 
 ### PM2 Deployment
 - Configuration in `ecosystem.config.js`

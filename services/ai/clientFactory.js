@@ -1,59 +1,51 @@
-const { AzureOpenAI } = require('openai');
 const OpenAI = require('openai');
 const logger = require('../../utils/logger');
 
-/**
- * 初始化主要客户端 (Gemini API)
- * @returns {OpenAI | null}
- */
-function initPrimaryClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
+function buildClient({ apiKey, baseURL, label }) {
   if (!apiKey) {
-    logger.warn('主要模型环境变量缺失: GEMINI_API_KEY');
+    logger.warn(`${label} API Key 未配置`);
     return null;
   }
 
   try {
-    const client = new OpenAI({
-      apiKey: apiKey,
-      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-    });
-    logger.info('Gemini API 客户端初始化成功');
+    const options = { apiKey };
+    if (baseURL) {
+      options.baseURL = baseURL;
+    }
+    const client = new OpenAI(options);
+    logger.info(`${label} 客户端初始化成功`);
     return client;
   } catch (error) {
-    logger.error('Gemini API 客户端初始化失败', error);
+    logger.error(`${label} 客户端初始化失败`, error);
     return null;
   }
 }
 
 /**
- * 初始化备用客户端 (Azure OpenAI)
- * @returns {AzureOpenAI | null}
+ * 初始化主要客户端（OpenAI 兼容）
+ * @returns {OpenAI | null}
+ */
+function initPrimaryClient() {
+  return buildClient({
+    apiKey: process.env.PRIMARY_API_KEY,
+    baseURL: process.env.PRIMARY_API_BASE_URL,
+    label: '主要API'
+  });
+}
+
+/**
+ * 初始化备用客户端（OpenAI 兼容）
+ * @returns {OpenAI | null}
  */
 function initFallbackClient() {
-  const { AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME } = process.env;
-
-  if (!AZURE_OPENAI_API_KEY || !AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_DEPLOYMENT_NAME) {
-    logger.warn('备用模型 (Azure) 配置不完整，跳过初始化');
-    return null;
-  }
-  
-  try {
-    const client = new AzureOpenAI({
-      apiKey: AZURE_OPENAI_API_KEY,
-      endpoint: AZURE_OPENAI_ENDPOINT,
-      apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview',
-      deployment: AZURE_OPENAI_DEPLOYMENT_NAME
-    });
-    logger.info('Azure OpenAI 备用客户端初始化成功');
-    return client;
-  } catch (error) {
-    logger.error('Azure OpenAI 备用客户端初始化失败', error);
-    return null;
-  }
+  return buildClient({
+    apiKey: process.env.FALLBACK_API_KEY,
+    baseURL: process.env.FALLBACK_API_BASE_URL,
+    label: '备用API'
+  });
 }
 
 module.exports = {
   initPrimaryClient,
   initFallbackClient
-}; 
+};

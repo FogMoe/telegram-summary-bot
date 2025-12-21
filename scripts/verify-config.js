@@ -24,10 +24,12 @@ async function verifyConfiguration() {
   
   const requiredEnvs = ['BOT_TOKEN'];
   const optionalEnvs = [
-    'GEMINI_API_KEY',
-    'AZURE_OPENAI_API_KEY',
-    'AZURE_OPENAI_ENDPOINT',
-    'AZURE_OPENAI_DEPLOYMENT_NAME'
+    'PRIMARY_API_KEY',
+    'PRIMARY_API_BASE_URL',
+    'PRIMARY_MODEL',
+    'FALLBACK_API_KEY',
+    'FALLBACK_API_BASE_URL',
+    'FALLBACK_MODEL'
   ];
 
   for (const env of requiredEnvs) {
@@ -47,19 +49,15 @@ async function verifyConfiguration() {
     }
   }
 
-  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
-  const azureConfigured = Boolean(
-    process.env.AZURE_OPENAI_API_KEY &&
-    process.env.AZURE_OPENAI_ENDPOINT &&
-    process.env.AZURE_OPENAI_DEPLOYMENT_NAME
-  );
+  const primaryConfigured = Boolean(process.env.PRIMARY_API_KEY);
+  const fallbackConfigured = Boolean(process.env.FALLBACK_API_KEY);
 
-  if (geminiConfigured && azureConfigured) {
-    logger.success('Gemini 与 Azure OpenAI 已配置 - 总结功能可用');
-  } else if (geminiConfigured) {
-    logger.warn('仅配置 Gemini - 备用模型不可用');
-  } else if (azureConfigured) {
-    logger.warn('仅配置 Azure OpenAI - 主要模型不可用');
+  if (primaryConfigured && fallbackConfigured) {
+    logger.success('主/备 API 已配置 - 总结功能可用');
+  } else if (primaryConfigured) {
+    logger.warn('仅配置主要 API - 备用 API 不可用');
+  } else if (fallbackConfigured) {
+    logger.warn('仅配置备用 API - 主要 API 不可用');
   } else {
     logger.warn('未配置 AI 服务 - 总结功能不可用');
   }
@@ -137,7 +135,7 @@ async function verifyConfiguration() {
   console.log();
 
   // 测试 AI 连接（如果配置了）
-  if (geminiConfigured || azureConfigured) {
+  if (primaryConfigured || fallbackConfigured) {
     logger.info('5. 测试 AI 服务连接');
     
     try {

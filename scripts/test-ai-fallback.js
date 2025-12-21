@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * AI 模型自动切换功能测试脚本
- * 测试主要模型(Gemini)和备用模型(Azure OpenAI)的自动切换
+ * AI 自动切换功能测试脚本
+ * 测试主要 API 与备用 API 的自动切换
  */
 
 require('dotenv').config();
@@ -54,12 +54,12 @@ async function testAIFallback() {
       });
 
       console.log('✅ 内容生成成功');
-      console.log('使用的模型:', response.modelUsed === 'primary' ? '主要模型(Gemini)' : '备用模型(Azure OpenAI)');
+      console.log('使用的API:', response.modelUsed === 'primary' ? '主要 API' : '备用 API');
       console.log('模型名称:', response.modelName);
       console.log('生成的内容:', response.choices[0]?.message?.content);
       
       if (response.primaryError) {
-        console.log('⚠️  主要模型错误:', response.primaryError);
+        console.log('⚠️  主要 API 错误:', response.primaryError);
       }
 
     } catch (error) {

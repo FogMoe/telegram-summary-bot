@@ -1,6 +1,6 @@
 /**
  * AI 服务模块
- * 支持主要模型(Gemini)和备用模型(Azure OpenAI)的自动切换
+ * 支持 OpenAI 兼容 API 的主备自动切换
  */
 
 const logger = require('../utils/logger');
@@ -16,6 +16,14 @@ class AIService {
     this.primaryClient = null;
     this.fallbackClient = null;
     this.isInitialized = false;
+  }
+
+  getPrimaryModel() {
+    return process.env.PRIMARY_MODEL || 'gpt-4o-mini';
+  }
+
+  getFallbackModel() {
+    return process.env.FALLBACK_MODEL || process.env.PRIMARY_MODEL || 'gpt-4o-mini';
   }
 
   /**
@@ -39,22 +47,22 @@ class AIService {
   }
 
   /**
-   * 使用主要模型生成内容，失败时自动切换到备用模型
+   * 使用主要 API 生成内容，失败时自动切换到备用 API
    * @param {Object} options - 生成选项
    * @returns {Object} 生成结果
    */
   async generateContentWithFallback(options) {
     this.ensureInitialized();
 
-    // 首先尝试主要模型 (Gemini)
+    // 首先尝试主要 API
     try {
       if (!this.primaryClient) {
-        throw new Error('主要模型 (Gemini) 未配置');
+        throw new Error('主要 API 未配置');
       }
-      logger.info('尝试使用主要模型 (Gemini) 生成内容');
+      logger.info('尝试使用主要 API 生成内容');
       
       const primaryOptions = {
-        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+        model: this.getPrimaryModel(),
         messages: options.messages,
         max_tokens: options.max_tokens,
         temperature: options.temperature,
@@ -67,30 +75,30 @@ class AIService {
 
       const response = await this.primaryClient.chat.completions.create(primaryOptions);
       
-      logger.success('主要模型 (Gemini) 调用成功');
+      logger.success('主要 API 调用成功');
       return {
         ...response,
         modelUsed: 'primary',
-        modelName: 'Gemini'
+        modelName: this.getPrimaryModel()
       };
 
     } catch (primaryError) {
-      logger.warn('主要模型 (Gemini) 调用失败，尝试备用模型', {
+      logger.warn('主要 API 调用失败，尝试备用 API', {
         error: primaryError.message,
         stack: primaryError.stack
       });
 
-      // 如果主要模型失败，尝试备用模型 (Azure OpenAI)
+      // 如果主要 API 失败，尝试备用 API
       if (!this.fallbackClient) {
-        logger.error('备用模型未配置，无法进行故障转移');
-        throw new Error('主要模型调用失败且备用模型未配置');
+        logger.error('备用 API 未配置，无法进行故障转移');
+        throw new Error('主要 API 调用失败且备用 API 未配置');
       }
 
       try {
-        logger.info('尝试使用备用模型 (Azure OpenAI) 生成内容');
+        logger.info('尝试使用备用 API 生成内容');
         
         const fallbackOptions = {
-          model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
+          model: this.getFallbackModel(),
           messages: options.messages,
           max_tokens: options.max_tokens,
           temperature: options.temperature,
@@ -103,22 +111,22 @@ class AIService {
 
         const response = await this.fallbackClient.chat.completions.create(fallbackOptions);
         
-        logger.success('备用模型 (Azure OpenAI) 调用成功');
+        logger.success('备用 API 调用成功');
         return {
           ...response,
           modelUsed: 'fallback',
-          modelName: 'Azure OpenAI',
+          modelName: this.getFallbackModel(),
           primaryError: primaryError.message
         };
 
       } catch (fallbackError) {
-        logger.error('备用模型 (Azure OpenAI) 也调用失败', {
+        logger.error('备用 API 也调用失败', {
           primaryError: primaryError.message,
           fallbackError: fallbackError.message
         });
 
-        // 如果两个模型都失败，抛出包含详细信息的错误
-        const error = new Error('所有AI模型都不可用');
+        // 如果两个 API 都失败，抛出包含详细信息的错误
+        const error = new Error('所有 AI API 都不可用');
         error.primaryError = primaryError;
         error.fallbackError = fallbackError;
         throw error;
@@ -288,11 +296,12 @@ class AIService {
       primaryClient: !!this.primaryClient,
       fallbackClient: !!this.fallbackClient,
       environment: {
-        geminiApiKey: process.env.GEMINI_API_KEY ? '已配置' : '未配置',
-        geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-        azureApiKey: process.env.AZURE_OPENAI_API_KEY ? '已配置' : '未配置',
-        azureEndpoint: process.env.AZURE_OPENAI_ENDPOINT || '未配置',
-        azureDeployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || '未配置'
+        primaryApiKey: process.env.PRIMARY_API_KEY ? '已配置' : '未配置',
+        primaryBaseUrl: process.env.PRIMARY_API_BASE_URL || '默认(OpenAI)',
+        primaryModel: this.getPrimaryModel(),
+        fallbackApiKey: process.env.FALLBACK_API_KEY ? '已配置' : '未配置',
+        fallbackBaseUrl: process.env.FALLBACK_API_BASE_URL || '默认(OpenAI)',
+        fallbackModel: this.getFallbackModel()
       }
     };
     
@@ -315,14 +324,14 @@ class AIService {
     this.ensureInitialized();
     
     const results = {
-      primary: { success: false, error: null, model: 'Gemini' },
-      fallback: { success: false, error: null, model: 'Azure OpenAI' }
+      primary: { success: false, error: null, model: this.getPrimaryModel() },
+      fallback: { success: false, error: null, model: this.getFallbackModel() }
     };
 
     if (this.primaryClient) {
       try {
         const response = await this.primaryClient.chat.completions.create({
-          model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+          model: this.getPrimaryModel(),
           messages: [
             { role: 'user', content: '请回复"连接测试成功"' }
           ],
@@ -330,21 +339,21 @@ class AIService {
         });
 
         const content = response.choices[0]?.message?.content;
-        logger.success('Gemini API 连接测试成功', { response: content });
+        logger.success('主要 API 连接测试成功', { response: content });
         results.primary.success = true;
         
       } catch (error) {
-        logger.warn('Gemini API 连接测试失败', error);
+        logger.warn('主要 API 连接测试失败', error);
         results.primary.error = error.message;
       }
     } else {
-      results.primary.error = '主要模型未配置';
+      results.primary.error = '主要 API 未配置';
     }
 
     if (this.fallbackClient) {
       try {
         const response = await this.fallbackClient.chat.completions.create({
-          model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
+          model: this.getFallbackModel(),
           messages: [
             { role: 'user', content: '请回复"连接测试成功"' }
           ],
@@ -352,15 +361,15 @@ class AIService {
         });
 
         const content = response.choices[0]?.message?.content;
-        logger.success('Azure OpenAI 连接测试成功', { response: content });
+        logger.success('备用 API 连接测试成功', { response: content });
         results.fallback.success = true;
         
       } catch (error) {
-        logger.warn('Azure OpenAI 连接测试失败', error);
+        logger.warn('备用 API 连接测试失败', error);
         results.fallback.error = error.message;
       }
     } else {
-      results.fallback.error = '备用模型未配置';
+      results.fallback.error = '备用 API 未配置';
     }
 
     const anyAvailable = results.primary.success || results.fallback.success;
@@ -368,7 +377,7 @@ class AIService {
     if (anyAvailable) {
       logger.success('AI 服务连接测试完成', { results });
     } else {
-      logger.error('所有AI模型连接测试都失败了', { results });
+      logger.error('所有 AI API 连接测试都失败了', { results });
     }
 
     return { success: anyAvailable, results };
@@ -378,27 +387,24 @@ class AIService {
    * 获取服务状态
    */
   getStatus() {
-    const primaryConfigured = !!process.env.GEMINI_API_KEY;
-    const fallbackConfigured = !!(
-      process.env.AZURE_OPENAI_API_KEY && 
-      process.env.AZURE_OPENAI_ENDPOINT && 
-      process.env.AZURE_OPENAI_DEPLOYMENT_NAME
-    );
+    const primaryConfigured = !!process.env.PRIMARY_API_KEY;
+    const fallbackConfigured = !!process.env.FALLBACK_API_KEY;
     
     return {
       initialized: this.isInitialized,
       primary: {
-        model: 'Gemini',
+        model: 'Primary API',
         configured: primaryConfigured,
-        apiKey: process.env.GEMINI_API_KEY ? '已配置' : '未配置',
-        modelName: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+        apiKey: process.env.PRIMARY_API_KEY ? '已配置' : '未配置',
+        baseUrl: process.env.PRIMARY_API_BASE_URL || '默认(OpenAI)',
+        modelName: this.getPrimaryModel()
       },
       fallback: {
-        model: 'Azure OpenAI',
+        model: 'Fallback API',
         configured: fallbackConfigured,
-        endpoint: process.env.AZURE_OPENAI_ENDPOINT || '未配置',
-        deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || '未配置',
-        apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview'
+        apiKey: process.env.FALLBACK_API_KEY ? '已配置' : '未配置',
+        baseUrl: process.env.FALLBACK_API_BASE_URL || '默认(OpenAI)',
+        modelName: this.getFallbackModel()
       }
     };
   }

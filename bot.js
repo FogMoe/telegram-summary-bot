@@ -51,14 +51,10 @@ async function initializeServices() {
     // 初始化消息存储
     await messageStore.init();
     
-    const hasGeminiConfig = Boolean(process.env.GEMINI_API_KEY);
-    const hasAzureConfig = Boolean(
-      process.env.AZURE_OPENAI_API_KEY &&
-      process.env.AZURE_OPENAI_ENDPOINT &&
-      process.env.AZURE_OPENAI_DEPLOYMENT_NAME
-    );
+    const hasPrimaryConfig = Boolean(process.env.PRIMARY_API_KEY);
+    const hasFallbackConfig = Boolean(process.env.FALLBACK_API_KEY);
 
-    if (hasGeminiConfig || hasAzureConfig) {
+    if (hasPrimaryConfig || hasFallbackConfig) {
       await aiService.init();
 
       const isConnected = await aiService.testConnection();
@@ -178,12 +174,12 @@ async function setupBotInfo() {
 function displayServiceStatus() {
   logger.info('=== 服务状态 ===');
   
-  // Azure OpenAI 状态
-      const openaiStatus = aiService.getStatus();
-  logger.info('Azure OpenAI:', {
+  // AI 服务状态
+  const openaiStatus = aiService.getStatus();
+  logger.info('AI 服务:', {
     initialized: openaiStatus.initialized,
-    endpoint: openaiStatus.endpoint || '未配置',
-    deployment: openaiStatus.deployment || '未配置'
+    primary: openaiStatus.primary,
+    fallback: openaiStatus.fallback
   });
   
   // 缓存状态

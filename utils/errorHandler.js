@@ -9,7 +9,7 @@ const logger = require('./logger');
  */
 const ErrorTypes = {
   TELEGRAM_API: 'telegram_api',
-  AZURE_OPENAI: 'azure_openai', 
+  AI_API: 'ai_api', 
   DATABASE: 'database',
   VALIDATION: 'validation',
   RATE_LIMIT: 'rate_limit',
@@ -44,9 +44,9 @@ function classifyError(error) {
     return ErrorTypes.TELEGRAM_API;
   }
 
-  // Azure OpenAI 错误
-  if (name.includes('openai') || message.includes('openai') || message.includes('azure')) {
-    return ErrorTypes.AZURE_OPENAI;
+  // AI API 错误
+  if (name.includes('openai') || message.includes('openai') || message.includes('azure') || message.includes('ai')) {
+    return ErrorTypes.AI_API;
   }
 
   // 数据库错误
@@ -83,7 +83,7 @@ function getRecoveryStrategy(errorType, attemptCount = 1) {
     case ErrorTypes.TELEGRAM_API:
       return attemptCount < 3 ? RecoveryStrategies.RETRY : RecoveryStrategies.FAIL;
     
-    case ErrorTypes.AZURE_OPENAI:
+    case ErrorTypes.AI_API:
       return attemptCount < 2 ? RecoveryStrategies.RETRY : RecoveryStrategies.FALLBACK;
     
     case ErrorTypes.DATABASE:
@@ -193,8 +193,8 @@ function getUserFriendlyErrorMessage(error, operation = '操作') {
     case ErrorTypes.TELEGRAM_API:
       return `🤖 Telegram服务暂时不可用，请稍后再试。`;
     
-    case ErrorTypes.AZURE_OPENAI:
-      return `🧠 AI服务暂时繁忙，请稍后再试或联系管理员。`;
+    case ErrorTypes.AI_API:
+      return `🧠 AI 服务暂时繁忙，请稍后再试或联系管理员。`;
     
     case ErrorTypes.DATABASE:
       return `💾 数据服务暂时不可用，请稍后再试。`;

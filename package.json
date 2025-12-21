@@ -1,7 +1,7 @@
 {
   "name": "telegram-summary-bot",
   "version": "1.3.2",
-  "description": "智能的 Telegram 群组聊天总结机器人，支持AI模型自动切换(Gemini/Azure OpenAI)、异步处理、多语言自动检测和管理员权限控制",
+  "description": "智能的 Telegram 群组聊天总结机器人，支持 OpenAI 兼容 API 主备切换、异步处理、多语言自动检测和管理员权限控制",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",

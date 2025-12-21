@@ -6,7 +6,7 @@
 
 | 文档 | 描述 |
 |------|------|
-| [AI-FALLBACK-SETUP.md](AI-FALLBACK-SETUP.md) | 🔄 **AI模型自动切换指南** - 如何配置和使用 Gemini 与 Azure OpenAI 双模型 |
+| [AI-FALLBACK-SETUP.md](AI-FALLBACK-SETUP.md) | 🔄 **AI模型自动切换指南** - 如何配置和使用 OpenAI 兼容主备 API |
 | [PM2-DEPLOYMENT.md](PM2-DEPLOYMENT.md) | 🚀 **PM2 部署教程** - 详细的生产环境部署指南，包括安装、配置、监控等 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 🤝 **贡献指南** - 如何参与项目开发的完整指南 |
 | [CHANGELOG.md](CHANGELOG.md) | 📝 **更新日志** - 详细的版本更新记录 |
@@ -14,7 +14,7 @@
 ## 🔗 快速链接
 
 ### 部署与配置
-- **[AI模型配置](AI-FALLBACK-SETUP.md)** - 双模型配置指南
+- **[AI模型配置](AI-FALLBACK-SETUP.md)** - 主备 API 配置指南
 - **[PM2 部署教程](PM2-DEPLOYMENT.md)** - 生产环境部署
 - **[环境变量配置](../env.example)** - 环境变量配置示例
 
@@ -38,9 +38,9 @@
 
 - 🤖 **智能总结**：使用 AI 模型分析群组聊天记录，支持 1-1000 条消息的深度分析。
 - 🔄 **AI模型自动切换**：
-  - **主模型**: Google Gemini 2.5 Flash
-  - **备用模型**: Azure OpenAI
-  - **高可用**: 当主模型不可用时，自动无缝切换到备用模型，确保服务不中断。
+  - **主要 API**: OpenAI 兼容服务
+  - **备用 API**: OpenAI 兼容服务
+  - **高可用**: 当主 API 不可用时，自动无缝切换到备用 API，确保服务不中断。
 - ⚡ **异步处理**：非阻塞式任务队列，用户请求立即响应，后台异步生成总结。
 - 🌍 **多语言支持**：自动检测群组主要语言，智能本地化回复。
 - 📊 **消息分析**：统计活跃用户、消息数量、参与度等。

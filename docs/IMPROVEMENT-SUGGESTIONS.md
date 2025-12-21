@@ -41,7 +41,7 @@
 // config/validator.js 示例
 const requiredVars = [
   'BOT_TOKEN',
-  'GEMINI_API_KEY',
+  'PRIMARY_API_KEY',
   // ...其他必需变量
 ];
 

@@ -64,7 +64,7 @@ class TaskQueueHandler {
   isContentFilterError(error) {
     if (!error) return false;
     
-    // 检查Azure OpenAI特定的content_filter错误码
+    // 检查 OpenAI 兼容服务的 content_filter 错误码
     if (error.code === 'content_filter') {
       logger.debug('检测到content_filter错误码', { 
         code: error.code, 
@@ -84,6 +84,7 @@ class TaskQueueHandler {
       errorString.includes('content filtering') ||
       errorString.includes('filtered due to the prompt') ||
       errorString.includes('Azure OpenAI\'s content management policy') ||
+      errorString.includes('OpenAI policy') ||
       errorString.includes('ResponsibleAIPolicyViolation') ||
       errorString.includes('content_filter_result') ||
       errorString.includes('违反内容政策') ||
