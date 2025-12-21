@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
+const { registerCommand } = require('../utils/commandRegistry');
 
 /**
  * 自动加载命令模块
@@ -25,6 +26,7 @@ function loadCommands(bot) {
       if (commandModule.command && commandModule.handler) {
         // 注册命令
         bot.command(commandModule.command, commandModule.handler);
+        registerCommand(commandModule.command);
         logger.success(`已加载命令: /${commandModule.command} - ${commandModule.description || '无描述'}`);
       } else {
         logger.warn(`跳过无效的命令模块: ${file}`);

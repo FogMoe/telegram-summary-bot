@@ -5,6 +5,7 @@
 
 const logger = require('../utils/logger');
 const { COMMAND_THROTTLE } = require('../config/constants');
+const { isCommandMatch } = require('../utils/telegramCommand');
 
 class CommandThrottle {
   constructor() {
@@ -112,7 +113,7 @@ const commandThrottle = new CommandThrottle();
 function createCommandThrottle(command, throttleMs = COMMAND_THROTTLE.DEFAULT_THROTTLE_MS) {
   return (ctx, next) => {
     // 只对指定命令进行节流
-    if (!ctx.message?.text?.startsWith(`/${command}`)) {
+    if (!isCommandMatch(ctx, command)) {
       return next();
     }
 

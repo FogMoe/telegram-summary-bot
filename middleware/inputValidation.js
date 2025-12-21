@@ -5,6 +5,8 @@
 
 const logger = require('../utils/logger');
 const { INPUT_LIMITS } = require('../config/constants');
+const { isCommandForBot, getCommandInfo } = require('../utils/telegramCommand');
+const { isCommandRegistered } = require('../utils/commandRegistry');
 
 /**
  * 输入验证中间件
@@ -22,7 +24,12 @@ const inputValidation = (ctx, next) => {
     }
 
     // 验证命令参数（防止注入攻击）
-    if (ctx.message?.text?.startsWith('/')) {
+    if (ctx.message?.text?.startsWith('/') && isCommandForBot(ctx)) {
+      const commandInfo = getCommandInfo(ctx);
+      if (commandInfo && !isCommandRegistered(commandInfo.command)) {
+        return next();
+      }
+
       const parts = ctx.message.text.split(' ');
       const command = parts[0];
       const args = parts.slice(1);

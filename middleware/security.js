@@ -4,6 +4,8 @@
 
 const logger = require('../utils/logger');
 const { RATE_LIMIT: RATE_LIMIT_SETTINGS } = require('../config/constants');
+const { isCommandForBot, getCommandInfo } = require('../utils/telegramCommand');
+const { isCommandRegistered } = require('../utils/commandRegistry');
 
 /**
  * 速率限制中间件
@@ -45,6 +47,12 @@ const rateLimiter = (() => {
   const middleware = (ctx, next) => {
     const userId = ctx.from?.id;
     if (!userId) return next();
+    if (!isCommandForBot(ctx)) return next();
+
+    const commandInfo = getCommandInfo(ctx);
+    if (commandInfo && !isCommandRegistered(commandInfo.command)) {
+      return next();
+    }
 
     const now = Date.now();
     const userKey = `user_${userId}`;
@@ -114,30 +122,7 @@ const userValidator = (ctx, next) => {
  * 内容过滤中间件
  * 过滤不当内容
  */
-const contentFilter = (ctx, next) => {
-  const message = ctx.message;
-  
-  if (message?.text) {
-    const text = message.text.toLowerCase();
-    
-    // 简单的内容过滤（可以扩展）
-    const forbiddenWords = ['spam', 'abuse']; // 示例禁词
-    
-    const hasForbiddenContent = forbiddenWords.some(word => 
-      text.includes(word)
-    );
-    
-    if (hasForbiddenContent) {
-      logger.warn(`检测到不当内容`, {
-        userId: ctx.from.id,
-        text: text.substring(0, 50)
-      });
-      return ctx.reply('⚠️ 检测到不当内容，请文明使用。');
-    }
-  }
-  
-  return next();
-};
+const contentFilter = (ctx, next) => next();
 
 module.exports = {
   rateLimiter,
