@@ -17,6 +17,7 @@ const {
   chatTypeLogger, 
   messageStatsMiddleware 
 } = require('./middleware/messageListener');
+const { COMMAND_THROTTLE } = require('./config/constants');
 
 // 引入服务
 const messageStore = require('./storage/messageStore');
@@ -50,19 +51,24 @@ async function initializeServices() {
     // 初始化消息存储
     await messageStore.init();
     
-    // 初始化 Azure OpenAI 服务（如果配置了环境变量）
-    if (process.env.AZURE_OPENAI_API_KEY) {
+    const hasGeminiConfig = Boolean(process.env.GEMINI_API_KEY);
+    const hasAzureConfig = Boolean(
+      process.env.AZURE_OPENAI_API_KEY &&
+      process.env.AZURE_OPENAI_ENDPOINT &&
+      process.env.AZURE_OPENAI_DEPLOYMENT_NAME
+    );
+
+    if (hasGeminiConfig || hasAzureConfig) {
       await aiService.init();
-      
-      // 测试连接
+
       const isConnected = await aiService.testConnection();
       if (isConnected) {
-        logger.success('Azure OpenAI 服务连接正常');
+        logger.success('AI 服务连接正常');
       } else {
-        logger.warn('Azure OpenAI 服务连接异常，但机器人将继续运行');
+        logger.warn('AI 服务连接异常，但机器人将继续运行');
       }
     } else {
-      logger.warn('未配置 Azure OpenAI 环境变量，总结功能将不可用');
+      logger.warn('未配置 AI 服务环境变量，总结功能将不可用');
     }
     
     // 初始化任务队列事件监听器
@@ -103,7 +109,7 @@ function registerMiddleware() {
   bot.use(contentFilter);          // 内容过滤
   
   // 命令节流中间件（针对特定命令）
-  bot.use(createCommandThrottle('summary', 3000)); // /summary 命令3秒节流
+  bot.use(createCommandThrottle('summary', COMMAND_THROTTLE.DEFAULT_THROTTLE_MS));
   
   // 消息处理中间件
   bot.use(messageStoreMiddleware);  // 消息存储

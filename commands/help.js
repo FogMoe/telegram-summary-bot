@@ -3,6 +3,7 @@
  */
 
 const { getAvailableCommands } = require('./index');
+const { SUMMARY_LIMITS } = require('../config/constants');
 
 const helpCommand = (ctx) => {
   // 获取所有可用命令
@@ -28,13 +29,13 @@ const helpCommand = (ctx) => {
 
 ${isGroup ? 
   `🛠️ *在群组中使用*
-1. 📝 发送 \`/summary\` - 总结最近100条消息
+1. 📝 发送 \`/summary\` - 总结最近${SUMMARY_LIMITS.DEFAULT_MESSAGE_COUNT}条消息
 2. 📝 发送 \`/summary 数量\` - 自定义总结消息数量
    例如：\`/summary 50\` 或 \`/summary 300\`
 
 💡 *使用小贴士*
-• 可分析 1 到 1000 条消息
-• 每人每群组 5 分钟内只能使用一次
+• 可分析 ${SUMMARY_LIMITS.MIN_MESSAGE_COUNT} 到 ${SUMMARY_LIMITS.MAX_MESSAGE_COUNT} 条消息
+• 每人每群组 ${SUMMARY_LIMITS.COOLDOWN_MINUTES} 分钟内只能使用一次
 • 机器人会记住群组加入后的所有消息
 • 相同条件下会使用缓存，响应更快` 
   : 

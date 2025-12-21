@@ -3,6 +3,7 @@
  */
 
 const { getAvailableCommands } = require('./index');
+const { SUMMARY_LIMITS } = require('../config/constants');
 
 const startCommand = (ctx) => {
   // 获取用户信息
@@ -26,7 +27,7 @@ const startCommand = (ctx) => {
 👋 我是一个智能的群组聊天分析机器人，可以帮助您总结群组聊天记录。
 
 🤖 *主要功能*：
-• 📊 分析群组聊天记录（支持1-1000条消息）
+• 📊 分析群组聊天记录（支持${SUMMARY_LIMITS.MIN_MESSAGE_COUNT}-${SUMMARY_LIMITS.MAX_MESSAGE_COUNT}条消息）
 • 🧠 使用 AI 生成智能总结
 • 🌍 自动检测语言并使用相应语言回复
 • 📈 提供用户活跃度和话题分析
@@ -37,7 +38,7 @@ ${commandList}
 💡 *使用提示*：
 • 使用 /summary 命令开始总结聊天记录
 • 机器人会自动记录加入后的所有群组消息
-• 每用户每群组有5分钟冷却期防止频繁调用
+• 每用户每群组有${SUMMARY_LIMITS.COOLDOWN_MINUTES}分钟冷却期防止频繁调用
 
 🔔 发起者：${userName} (ID: ${userId})`, {
       parse_mode: 'Markdown'

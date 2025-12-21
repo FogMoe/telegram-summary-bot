@@ -5,6 +5,7 @@
 
 const messageStore = require('../storage/messageStore');
 const logger = require('../utils/logger');
+const { MESSAGE_STATS } = require('../config/constants');
 
 /**
  * 消息存储中间件
@@ -15,7 +16,7 @@ const messageStoreMiddleware = async (ctx, next) => {
     // 只处理文本消息
     if (ctx.message && ctx.message.text) {
       // 获取bot信息（优先使用上下文中的，其次使用bot实例中的）
-      const botId = ctx.botInfo?.id || ctx.telegram?.options?.username || null;
+      const botId = ctx.botInfo?.id || ctx.telegram?.botInfo?.id || null;
       const senderId = ctx.message.from?.id;
       
       // 过滤掉bot自己发送的消息，防止"总结套娃"
@@ -180,8 +181,8 @@ const messageStatsMiddleware = (() => {
       // 每1000条消息或每小时报告一次统计
       const now = Date.now();
       const shouldReport = (
-        messageCount % 1000 === 0 || 
-        (now - lastStatsReport) > 60 * 60 * 1000
+        messageCount % MESSAGE_STATS.REPORT_EVERY_MESSAGES === 0 || 
+        (now - lastStatsReport) > MESSAGE_STATS.REPORT_INTERVAL_MS
       );
 
       if (shouldReport) {

@@ -23,7 +23,12 @@ async function verifyConfiguration() {
   logger.info('1. 检查环境变量配置');
   
   const requiredEnvs = ['BOT_TOKEN'];
-  const optionalEnvs = ['AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_DEPLOYMENT_NAME'];
+  const optionalEnvs = [
+    'GEMINI_API_KEY',
+    'AZURE_OPENAI_API_KEY',
+    'AZURE_OPENAI_ENDPOINT',
+    'AZURE_OPENAI_DEPLOYMENT_NAME'
+  ];
 
   for (const env of requiredEnvs) {
     if (process.env[env]) {
@@ -34,22 +39,29 @@ async function verifyConfiguration() {
     }
   }
 
-  let azureConfigured = 0;
   for (const env of optionalEnvs) {
     if (process.env[env]) {
       logger.success(`${env}: 已配置`);
-      azureConfigured++;
     } else {
       logger.warn(`${env}: 未配置（可选）`);
     }
   }
 
-  if (azureConfigured === optionalEnvs.length) {
-    logger.success('Azure OpenAI 完全配置 - 总结功能可用');
-  } else if (azureConfigured > 0) {
-    logger.warn('Azure OpenAI 部分配置 - 总结功能可能不可用');
+  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
+  const azureConfigured = Boolean(
+    process.env.AZURE_OPENAI_API_KEY &&
+    process.env.AZURE_OPENAI_ENDPOINT &&
+    process.env.AZURE_OPENAI_DEPLOYMENT_NAME
+  );
+
+  if (geminiConfigured && azureConfigured) {
+    logger.success('Gemini 与 Azure OpenAI 已配置 - 总结功能可用');
+  } else if (geminiConfigured) {
+    logger.warn('仅配置 Gemini - 备用模型不可用');
+  } else if (azureConfigured) {
+    logger.warn('仅配置 Azure OpenAI - 主要模型不可用');
   } else {
-    logger.warn('Azure OpenAI 未配置 - 总结功能不可用');
+    logger.warn('未配置 AI 服务 - 总结功能不可用');
   }
 
   console.log();
@@ -124,23 +136,23 @@ async function verifyConfiguration() {
 
   console.log();
 
-  // 测试 Azure OpenAI 连接（如果配置了）
-  if (azureConfigured === optionalEnvs.length) {
-    logger.info('5. 测试 Azure OpenAI 连接');
+  // 测试 AI 连接（如果配置了）
+  if (geminiConfigured || azureConfigured) {
+    logger.info('5. 测试 AI 服务连接');
     
     try {
-          const aiService = require('../services/aiService');
-    await aiService.init();
-    const isConnected = await aiService.testConnection();
+      const aiService = require('../services/aiService');
+      await aiService.init();
+      const isConnected = await aiService.testConnection();
       
       if (isConnected) {
-        logger.success('Azure OpenAI 连接测试成功');
+        logger.success('AI 服务连接测试成功');
       } else {
-        logger.error('Azure OpenAI 连接测试失败');
+        logger.error('AI 服务连接测试失败');
         errors++;
       }
     } catch (error) {
-      logger.error('Azure OpenAI 连接测试出错:', error.message);
+      logger.error('AI 服务连接测试出错:', error.message);
       errors++;
     }
 

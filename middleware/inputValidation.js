@@ -4,6 +4,7 @@
  */
 
 const logger = require('../utils/logger');
+const { INPUT_LIMITS } = require('../config/constants');
 
 /**
  * 输入验证中间件
@@ -11,7 +12,7 @@ const logger = require('../utils/logger');
 const inputValidation = (ctx, next) => {
   try {
     // 验证消息长度（防止DoS攻击）
-    if (ctx.message?.text && ctx.message.text.length > 10000) {
+    if (ctx.message?.text && ctx.message.text.length > INPUT_LIMITS.MAX_MESSAGE_LENGTH) {
       logger.warn('检测到超长消息', {
         userId: ctx.from?.id,
         messageLength: ctx.message.text.length,
@@ -37,7 +38,7 @@ const inputValidation = (ctx, next) => {
 
       // 验证参数
       for (const arg of args) {
-        if (arg.length > 1000) {
+        if (arg.length > INPUT_LIMITS.MAX_COMMAND_ARG_LENGTH) {
           logger.warn('检测到超长命令参数', {
             userId: ctx.from?.id,
             argLength: arg.length
@@ -92,7 +93,7 @@ function sanitizeInput(input) {
     .replace(/[<>]/g, '') // 移除潜在的HTML标签
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // 移除控制字符
     .trim()
-    .substring(0, 1000); // 限制长度
+    .substring(0, INPUT_LIMITS.MAX_INPUT_LENGTH);
 }
 
 /**

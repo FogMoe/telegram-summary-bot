@@ -4,6 +4,7 @@
  */
 
 const logger = require('../utils/logger');
+const { AI_LIMITS } = require('../config/constants');
 const { initPrimaryClient, initFallbackClient } = require('./ai/clientFactory');
 const { buildSystemPrompt, buildUserPrompt, buildResponseFormat } = require('./ai/promptBuilder');
 const { cleanJsonContent, repairTruncatedJson, extractSummaryFromFailedJson, formatStructuredSummary } = require('./ai/responseHandler');
@@ -156,21 +157,21 @@ class AIService {
       const fullText = messageTexts.join('\n');
       
       // 检查消息记录是否过长
-      if (fullText.length > 50000) {
+      if (fullText.length > AI_LIMITS.MAX_INPUT_CHARS) {
         logger.warn('消息记录超过长度限制', {
           textLength: fullText.length,
-          maxLength: 50000,
+          maxLength: AI_LIMITS.MAX_INPUT_CHARS,
           messagesCount: messages.length
         });
         
         const error = new Error('消息记录过长，请减少消息数量');
         error.name = 'MessageTooLongError';
         error.textLength = fullText.length;
-        error.maxLength = 50000;
+        error.maxLength = AI_LIMITS.MAX_INPUT_CHARS;
         throw error;
       }
       
-      const maxInputTokens = 6000;
+      const maxInputTokens = AI_LIMITS.MAX_INPUT_TOKENS;
       const truncatedText = truncateToTokenLimit(fullText, maxInputTokens);
 
       const validTopUsers = Array.isArray(topUsers) ? topUsers : [];
@@ -196,7 +197,7 @@ class AIService {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        max_tokens: 50000,
+        max_tokens: AI_LIMITS.MAX_OUTPUT_TOKENS,
         temperature: 0.7,
         response_format: responseFormat
       });

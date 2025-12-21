@@ -5,6 +5,9 @@
 
 const EventEmitter = require('events');
 const logger = require('../utils/logger');
+const { TASK_QUEUE } = require('../config/constants');
+const aiService = require('./aiService');
+const cacheService = require('./cacheService');
 
 class TaskQueue extends EventEmitter {
   constructor() {
@@ -113,11 +116,8 @@ class TaskQueue extends EventEmitter {
     const { chatId, userId, messages, stats, topUsers, messageCount } = task.data;
     
     try {
-      // 导入 AI 服务
-const aiService = require('./aiService');
-      
       // 生成总结
-              const summaryResult = await aiService.summarizeMessages(
+      const summaryResult = await aiService.summarizeMessages(
         messages,
         stats,
         topUsers
@@ -131,7 +131,6 @@ const aiService = require('./aiService');
       });
 
       // 缓存结果
-      const cacheService = require('./cacheService');
       cacheService.setSummaryCache(
         chatId,
         messageCount,
@@ -215,7 +214,7 @@ const aiService = require('./aiService');
     setTimeout(() => {
       this.taskResults.delete(taskId);
       this.taskStatus.delete(taskId);
-    }, 10 * 60 * 1000);
+    }, TASK_QUEUE.RESULT_TTL_MS);
   }
 
   /**
@@ -223,7 +222,7 @@ const aiService = require('./aiService');
    * @returns {string} 唯一任务ID
    */
   generateTaskId() {
-    return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `task_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
   }
 
   /**
@@ -249,7 +248,7 @@ const aiService = require('./aiService');
    */
   cleanup() {
     const now = Date.now();
-    const expireTime = 30 * 60 * 1000; // 30分钟
+    const expireTime = TASK_QUEUE.EXPIRE_TASK_MS;
 
     for (const [taskId, task] of this.taskStatus.entries()) {
       if (now - task.createdAt > expireTime) {

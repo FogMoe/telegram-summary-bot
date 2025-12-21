@@ -4,6 +4,7 @@
  */
 
 const logger = require('../utils/logger');
+const { COMMAND_THROTTLE } = require('../config/constants');
 
 class CommandThrottle {
   constructor() {
@@ -13,7 +14,7 @@ class CommandThrottle {
     // 定期清理过期的记录
     this.cleanupInterval = setInterval(() => {
       this.cleanupExpiredRecords();
-    }, 30 * 1000); // 每30秒清理一次
+    }, COMMAND_THROTTLE.CLEANUP_INTERVAL_MS);
   }
 
   /**
@@ -24,7 +25,7 @@ class CommandThrottle {
     let cleaned = 0;
 
     for (const [key, data] of this.userCommands.entries()) {
-      if (now - data.lastExecuted > 5 * 60 * 1000) { // 5分钟后清理
+      if (now - data.lastExecuted > COMMAND_THROTTLE.EXPIRE_AFTER_MS) {
         this.userCommands.delete(key);
         cleaned++;
       }
@@ -43,7 +44,7 @@ class CommandThrottle {
    * @param {number} throttleMs - 节流时间（毫秒）
    * @returns {boolean} 是否可以执行
    */
-  canExecuteCommand(userId, chatId, command, throttleMs = 3000) {
+  canExecuteCommand(userId, chatId, command, throttleMs = COMMAND_THROTTLE.DEFAULT_THROTTLE_MS) {
     const key = `${userId}_${chatId}_${command}`;
     const now = Date.now();
     
@@ -108,7 +109,7 @@ const commandThrottle = new CommandThrottle();
  * @param {number} throttleMs - 节流时间（毫秒）
  * @returns {Function} 中间件函数
  */
-function createCommandThrottle(command, throttleMs = 3000) {
+function createCommandThrottle(command, throttleMs = COMMAND_THROTTLE.DEFAULT_THROTTLE_MS) {
   return (ctx, next) => {
     // 只对指定命令进行节流
     if (!ctx.message?.text?.startsWith(`/${command}`)) {

@@ -5,13 +5,15 @@
 
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 const logger = require('../utils/logger');
+const { MESSAGE_STORE } = require('../config/constants');
 
 class MessageStore {
   constructor() {
     this.db = null;
-    this.maxMessagesPerChat = 2000; // 每个群组最多保留2000条消息
-    this.maxMessageAge = 7 * 24 * 60 * 60 * 1000; // 7天
+    this.maxMessagesPerChat = MESSAGE_STORE.MAX_MESSAGES_PER_CHAT;
+    this.maxMessageAge = MESSAGE_STORE.MAX_MESSAGE_AGE_MS;
   }
 
   /**
@@ -19,7 +21,11 @@ class MessageStore {
    */
   async init() {
     try {
-      const dbPath = path.join(process.cwd(), 'storage', 'messages.db');
+      const dbPath = process.env.DATABASE_PATH
+        ? path.resolve(process.env.DATABASE_PATH)
+        : path.join(process.cwd(), 'storage', 'messages.db');
+
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
       
       this.db = new sqlite3.Database(dbPath, (err) => {
         if (err) {
@@ -341,12 +347,12 @@ class MessageStore {
     // 每6小时执行一次清理
     this.cleanupInterval = setInterval(() => {
       this.cleanupOldMessages();
-    }, 6 * 60 * 60 * 1000);
+    }, MESSAGE_STORE.CLEANUP_INTERVAL_MS);
 
     // 启动时执行一次清理
     this.initCleanupTimeout = setTimeout(() => {
       this.cleanupOldMessages();
-    }, 10000); // 10秒后执行
+    }, MESSAGE_STORE.INITIAL_CLEANUP_DELAY_MS);
 
     logger.info('消息自动清理任务已设置');
   }

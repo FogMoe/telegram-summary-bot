@@ -4,6 +4,7 @@
  */
 
 const logger = require('../utils/logger');
+const { DUPLICATE_GUARD } = require('../config/constants');
 
 // 存储已处理的update_id
 const processedUpdates = new Set();
@@ -11,10 +12,10 @@ const processedUpdates = new Set();
 // 定期清理旧的update_id（防止内存泄漏）
 let cleanupTimer = setInterval(() => {
   const sizeBefore = processedUpdates.size;
-  // 保留最近的1000个update_id
-  if (processedUpdates.size > 1000) {
+  if (processedUpdates.size > DUPLICATE_GUARD.MAX_UPDATES) {
     const updates = Array.from(processedUpdates);
-    const toKeep = updates.slice(-500); // 保留最近的500个
+    const keepCount = Math.max(1, Math.floor(DUPLICATE_GUARD.MAX_UPDATES / 2));
+    const toKeep = updates.slice(-keepCount);
     processedUpdates.clear();
     toKeep.forEach(id => processedUpdates.add(id));
     
@@ -23,7 +24,7 @@ let cleanupTimer = setInterval(() => {
       after: processedUpdates.size
     });
   }
-}, 5 * 60 * 1000); // 每5分钟检查一次
+}, DUPLICATE_GUARD.CLEANUP_INTERVAL_MS);
 
 /**
  * 防重复执行中间件

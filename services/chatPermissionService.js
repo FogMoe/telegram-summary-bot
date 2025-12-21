@@ -5,9 +5,10 @@
 
 const cacheService = require('./cacheService');
 const logger = require('../utils/logger');
+const { CHAT_PERMISSION } = require('../config/constants');
 
 const RESTRICTION_KEY_PREFIX = 'chat_send_restricted';
-const DEFAULT_RESTRICTION_TTL = 6 * 60 * 60; // 6 小时
+const DEFAULT_RESTRICTION_TTL = CHAT_PERMISSION.RESTRICTION_TTL_SECONDS;
 
 /**
  * 生成受限群组缓存 key
@@ -62,4 +63,3 @@ module.exports = {
   markChatSendRestricted,
   isChatSendRestricted
 };
-

@@ -8,23 +8,8 @@ const aiService = require('../services/aiService');
 const cacheService = require('../services/cacheService');
 const taskQueue = require('../services/taskQueue');
 const logger = require('../utils/logger');
+const { isAdmin } = require('../utils/admin');
 const { version } = require('../package.json');
-
-/**
- * 检查用户是否为管理员
- * @param {number} userId - 用户ID
- * @returns {boolean} 是否为管理员
- */
-function isAdmin(userId) {
-  const adminIds = process.env.ADMIN_USER_IDS;
-  if (!adminIds) {
-    logger.warn('未配置管理员用户ID (ADMIN_USER_IDS)');
-    return false;
-  }
-  
-  const adminList = adminIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
-  return adminList.includes(userId);
-}
 
 const statusCommand = async (ctx) => {
   try {

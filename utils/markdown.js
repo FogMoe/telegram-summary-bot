@@ -222,10 +222,45 @@ function preProcessMarkdown(text) {
   return processedText;
 }
 
+/**
+ * 智能转义Markdown：保留标题格式，转义其他特殊字符
+ * @param {string} text - 需要转义的文本
+ * @returns {string} 转义后的文本
+ */
+function smartEscapeMarkdown(text) {
+  if (!text || typeof text !== 'string') {
+    return text;
+  }
+
+  const titlePattern = /\*([^*\n]+)\*/g;
+  const titles = [];
+  let titleIndex = 0;
+
+  const textWithPlaceholders = text.replace(titlePattern, (match) => {
+    const escapedTitle = match.replace(/_/g, '\\_');
+    titles.push(escapedTitle);
+    return `__TITLE_PLACEHOLDER_${titleIndex++}__`;
+  });
+
+  const escapedText = textWithPlaceholders
+    .replace(/\\/g, '\\\\')
+    .replace(/_/g, '\\_')
+    .replace(/`/g, '\\`')
+    .replace(/\[/g, '\\[');
+
+  let finalText = escapedText;
+  titles.forEach((title, index) => {
+    finalText = finalText.replace(`__TITLE_PLACEHOLDER_${index}__`, title);
+  });
+
+  return finalText;
+}
+
 module.exports = {
   escapeMarkdown,
   escapeMarkdownV2,
   stripMarkdown,
   preProcessMarkdown,
-  safeMarkdownProcess
-}; 
+  safeMarkdownProcess,
+  smartEscapeMarkdown
+};

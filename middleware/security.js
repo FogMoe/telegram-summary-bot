@@ -3,6 +3,7 @@
  */
 
 const logger = require('../utils/logger');
+const { RATE_LIMIT: RATE_LIMIT_SETTINGS } = require('../config/constants');
 
 /**
  * 速率限制中间件
@@ -10,9 +11,9 @@ const logger = require('../utils/logger');
  */
 const rateLimiter = (() => {
   const userRequests = new Map();
-  const RATE_LIMIT = 10; // 每分钟最多10次请求
-  const TIME_WINDOW = 60 * 1000; // 1分钟
-  const MAX_ENTRIES = 10000; // 最大缓存条目数
+  const RATE_LIMIT = RATE_LIMIT_SETTINGS.REQUESTS_PER_MINUTE;
+  const TIME_WINDOW = RATE_LIMIT_SETTINGS.TIME_WINDOW_MS;
+  const MAX_ENTRIES = RATE_LIMIT_SETTINGS.MAX_ENTRIES;
 
   // 定期清理过期的条目（防止内存泄漏）
   const cleanupInterval = setInterval(() => {
@@ -39,7 +40,7 @@ const rateLimiter = (() => {
     if (cleaned > 0) {
       logger.debug(`速率限制器清理了 ${cleaned} 个过期条目`);
     }
-  }, 5 * 60 * 1000); // 每5分钟清理一次
+  }, RATE_LIMIT_SETTINGS.CLEANUP_INTERVAL_MS);
 
   const middleware = (ctx, next) => {
     const userId = ctx.from?.id;

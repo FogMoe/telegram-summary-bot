@@ -6,25 +6,26 @@
 const NodeCache = require('node-cache');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const { CACHE_TTLS } = require('../config/constants');
 
 class CacheService {
   constructor() {
     // 创建多个缓存实例用于不同类型的数据
     this.summaryCache = new NodeCache({
-      stdTTL: 30 * 60, // 总结缓存30分钟
-      checkperiod: 5 * 60, // 每5分钟检查过期项
+      stdTTL: CACHE_TTLS.SUMMARY_TTL_SECONDS,
+      checkperiod: CACHE_TTLS.SUMMARY_CHECK_PERIOD_SECONDS,
       useClones: false
     });
 
     this.statsCache = new NodeCache({
-      stdTTL: 10 * 60, // 统计缓存10分钟
-      checkperiod: 2 * 60,
+      stdTTL: CACHE_TTLS.STATS_TTL_SECONDS,
+      checkperiod: CACHE_TTLS.STATS_CHECK_PERIOD_SECONDS,
       useClones: false
     });
 
     this.userCache = new NodeCache({
-      stdTTL: 60 * 60, // 用户信息缓存1小时
-      checkperiod: 10 * 60,
+      stdTTL: CACHE_TTLS.USER_TTL_SECONDS,
+      checkperiod: CACHE_TTLS.USER_CHECK_PERIOD_SECONDS,
       useClones: false
     });
 
@@ -216,13 +217,13 @@ class CacheService {
     const lastRequest = this.userCache.get(key);
     
     const now = Date.now();
-    const cooldownPeriod = 5 * 60 * 1000; // 5分钟冷却期
+    const cooldownPeriod = CACHE_TTLS.API_COOLDOWN_MS;
     
     if (lastRequest && (now - lastRequest) < cooldownPeriod) {
-      const remainingTime = Math.ceil((cooldownPeriod - (now - lastRequest)) / 1000 / 60);
-      logger.warn(`API 请求过于频繁: 用户${userId} 在群组${chatId}，还需等待${remainingTime}分钟`);
-      return false;
-    }
+    const remainingTime = Math.ceil((cooldownPeriod - (now - lastRequest)) / 1000 / 60);
+    logger.warn(`API 请求过于频繁: 用户${userId} 在群组${chatId}，还需等待${remainingTime}分钟`);
+    return false;
+  }
     
     logger.info(`API 请求频率检查通过: 用户${userId} 在群组${chatId}`);
     return true;
@@ -236,8 +237,27 @@ class CacheService {
   markAPIRequestStarted(chatId, userId) {
     const key = `api_limit_${chatId}_${userId}`;
     const now = Date.now();
-    this.userCache.set(key, now, 10 * 60); // 10分钟过期
+    this.userCache.set(key, now, CACHE_TTLS.API_LIMIT_TTL_SECONDS);
     logger.info(`API 请求已标记开始: 用户${userId} 在群组${chatId}`);
+  }
+
+  /**
+   * 获取 API 冷却剩余时间（毫秒）
+   * @param {number} chatId - 群组ID
+   * @param {number} userId - 用户ID
+   * @returns {number} 剩余时间（毫秒）
+   */
+  getApiCooldownRemaining(chatId, userId) {
+    const key = `api_limit_${chatId}_${userId}`;
+    const lastRequest = this.userCache.get(key);
+
+    if (!lastRequest) {
+      return 0;
+    }
+
+    const elapsed = Date.now() - lastRequest;
+    const remaining = CACHE_TTLS.API_COOLDOWN_MS - elapsed;
+    return remaining > 0 ? remaining : 0;
   }
 
   /**
