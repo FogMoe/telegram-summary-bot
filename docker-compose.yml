@@ -11,4 +11,7 @@ services:
     environment:
       DATABASE_PATH: /app/data/messages.db
     volumes:
-      - ./data:/app/data
+      - bot_data:/app/data
+
+volumes:
+  bot_data:

@@ -50,7 +50,7 @@
    docker compose down
    ```
 
-Docker Compose 会将 `./data` 挂载到容器内 `/app/data`，SQLite 消息数据库会持久保存在本机，不会因容器重建丢失。
+Docker Compose 会使用名为 `bot_data` 的 Docker volume 持久化 `/app/data`，SQLite 消息数据库会保留在该 volume 中，不会因容器重建丢失。
 
 ### 本地运行
 
