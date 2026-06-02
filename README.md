@@ -30,6 +30,30 @@
 
 ## ⏩ 快速上手
 
+### Docker Compose 一键部署
+
+1. 准备环境变量：
+   ```bash
+   cp env.example .env
+   # 编辑 .env，填写 BOT_TOKEN、AI API Key、模型等配置
+   ```
+2. 启动容器：
+   ```bash
+   docker compose up -d --build
+   ```
+3. 查看日志：
+   ```bash
+   docker compose logs -f telegram-summary-bot
+   ```
+4. 停止服务：
+   ```bash
+   docker compose down
+   ```
+
+Docker Compose 会将 `./data` 挂载到容器内 `/app/data`，SQLite 消息数据库会持久保存在本机，不会因容器重建丢失。
+
+### 本地运行
+
 1. 克隆项目并安装依赖：
    ```bash
    git clone https://github.com/FogMoe/telegram-summary-bot.git
