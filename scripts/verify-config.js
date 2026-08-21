@@ -92,19 +92,21 @@ async function verifyConfiguration() {
   
   const requiredFiles = [
     'bot.js',
-    'commands/index.js',
-    'commands/start.js',
-    'commands/help.js',
-    'commands/summary.js',
-    'commands/status.js',
-    'middleware/logging.js',
-    'middleware/security.js',
-    'middleware/messageListener.js',
-    'services/aiService.js',
-    'services/cacheService.js',
-    'storage/messageStore.js',
-    'utils/logger.js',
-    'utils/text.js'
+    'src/app.js',
+    'src/config/index.js',
+    'src/config/constants.js',
+    'src/commands/index.js',
+    'src/commands/start.js',
+    'src/commands/help.js',
+    'src/commands/summary.js',
+    'src/commands/status.js',
+    'src/middleware/logging.js',
+    'src/middleware/security.js',
+    'src/middleware/messageListener.js',
+    'src/services/aiService.js',
+    'src/services/cacheService.js',
+    'src/services/messageStore.js',
+    'src/utils/logger.js'
   ];
 
   const fs = require('fs');
@@ -139,11 +141,11 @@ async function verifyConfiguration() {
     logger.info('5. 测试 AI 服务连接');
     
     try {
-      const aiService = require('../services/aiService');
+      const aiService = require('../src/services/aiService');
       await aiService.init();
-      const isConnected = await aiService.testConnection();
-      
-      if (isConnected) {
+      const connectionResult = await aiService.testConnection();
+
+      if (connectionResult.success) {
         logger.success('AI 服务连接测试成功');
       } else {
         logger.error('AI 服务连接测试失败');

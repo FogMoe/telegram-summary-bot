@@ -6,10 +6,11 @@
   "scripts": {
     "start": "node bot.js",
     "dev": "node bot.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
+    "lint": "eslint .",
     "test-ai": "node scripts/test-ai-fallback.js",
     "verify": "node scripts/verify-config.js",
-    "clean": "rm -rf storage/messages.db",
+    "clean": "node -e \"require('fs').rmSync('storage/messages.db', { force: true })\"",
     "reset": "npm run clean && npm start",
     "pm2:deploy": "node scripts/deploy-pm2.js",
     "pm2:start": "pm2 start ecosystem.config.js --env production",
@@ -46,16 +47,37 @@
   ],
   "author": "ScarletKc",
   "license": "GPL-3.0",
+  "engines": {
+    "node": ">=24"
+  },
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/FogMoe/telegram-summary-bot/issues"
   },
   "homepage": "https://github.com/FogMoe/telegram-summary-bot#readme",
+  "jest": {
+    "testEnvironment": "node",
+    "setupFiles": [
+      "<rootDir>/tests/setup.js"
+    ],
+    "testMatch": [
+      "<rootDir>/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.js"
+    ]
+  },
   "dependencies": {
     "dotenv": "^16.5.0",
     "node-cache": "^5.1.2",
     "openai": "^5.8.0",
     "sqlite3": "^5.1.7",
     "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.0",
+    "globals": "^17.11.0",
+    "jest": "^30.4.2"
   }
 }

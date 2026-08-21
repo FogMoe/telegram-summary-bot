@@ -76,12 +76,20 @@
 
 ### 目录结构
 ```
-commands/     - 命令处理器
-middleware/   - 中间件
-services/     - 服务层
-storage/      - 数据存储
-utils/        - 工具函数
+bot.js            - 程序入口
+src/commands/     - 命令处理器
+src/middleware/   - 中间件
+src/services/     - 服务层（含 summaryDelivery 总结推送）
+src/telegram/     - Telegram API 辅助
+src/utils/        - 工具函数
+src/config/       - 集中配置与常量
+tests/            - Jest 测试（镜像 src/ 结构）
 ```
+
+### 测试与检查
+- 修改代码后运行 `npm test` 与 `npm run lint`，两者通过才可提交
+- 修复 bug 时请附上回归测试；新功能请补充对应测试
+- 测试文件放在 `tests/` 下与 `src/` 对应的子目录中
 
 ## 🔒 安全问题
 
