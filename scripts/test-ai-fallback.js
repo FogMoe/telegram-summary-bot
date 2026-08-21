@@ -6,8 +6,7 @@
  */
 
 require('dotenv').config();
-const logger = require('../utils/logger');
-const aiService = require('../services/aiService');
+const aiService = require('../src/services/aiService');
 
 async function testAIFallback() {
   console.log('🔧 开始测试 AI 模型自动切换功能...\n');

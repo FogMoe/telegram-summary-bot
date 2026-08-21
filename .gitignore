@@ -14,6 +14,7 @@ Thumbs.db
 # IDE 文件
 .vscode/
 .idea/ 
+.zcode/
 
 # 数据库文件
 storage/messages.db

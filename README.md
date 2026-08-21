@@ -1,7 +1,7 @@
 # Telegram Summary Bot
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen.svg)](https://nodejs.org/)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen.svg)](https://nodejs.org/)
 [![GitHub Issues](https://img.shields.io/github/issues/FogMoe/telegram-summary-bot.svg)](https://github.com/FogMoe/telegram-summary-bot/issues)
 
 一个智能的 Telegram 群组聊天总结机器人，具备高可用性、多语言支持、异步处理和多层安全防护。
@@ -77,17 +77,33 @@ Docker Compose 会使用名为 `bot_data` 的 Docker volume 持久化 `/app/data
 
 ```
 telegram-summary-bot/
-├── bot.js                # 主程序
-├── commands/             # 命令模块
+├── bot.js                # 程序入口（加载环境变量并启动应用）
+├── src/
+│   ├── app.js            # 应用组装根：服务初始化、中间件注册、优雅停止
+│   ├── config/           # 集中配置（环境变量）与常量
+│   ├── commands/         # 命令模块（/start /help /summary /status /admin）
+│   ├── middleware/       # 中间件（防重复、输入校验、限流、节流、消息监听等）
+│   ├── services/         # 服务层（AI、缓存、消息存储、任务队列）
+│   │   └── summaryDelivery/  # 总结结果推送（Markdown 降级链、分段发送、错误分类）
+│   ├── telegram/         # Telegram API 辅助（命令解析、错误识别、安全发送）
+│   └── utils/            # 工具函数（日志、Markdown、格式化、校验）
+├── tests/                # Jest 测试（目录结构镜像 src/）
+├── scripts/              # 辅助脚本（配置校验、AI 连接测试、PM2 部署）
 ├── docs/                 # 项目文档
-├── middleware/           # 中间件
-├── services/             # 服务层
-├── storage/              # 数据存储
-├── utils/                # 工具函数
 ├── .env                  # 环境变量（需自建）
 ├── package.json          # 配置文件
 └── README.md             # 项目说明
 ```
+
+## 🧪 开发与测试
+
+```bash
+npm test          # 运行全部单元测试（Jest）
+npm run lint      # 代码静态检查（ESLint）
+VERBOSE_TESTS=1 npm test   # 测试时查看完整日志输出
+```
+
+测试目录 `tests/` 与 `src/` 结构一一对应；贡献代码时请保证 `npm test` 与 `npm run lint` 通过（CI 会自动执行）。
 
 ## 🛠️ 技术栈
 

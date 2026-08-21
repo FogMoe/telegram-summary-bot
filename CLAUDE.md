@@ -9,7 +9,10 @@ Run the application:
 - `npm run dev` - Start the bot in development mode
 
 Testing and verification:
-- `npm run test-ai` - Test AI service connectivity and fallback functionality
+- `npm test` - Run the full Jest test suite
+- `npm run lint` - Run ESLint
+- `VERBOSE_TESTS=1 npm test` - Run tests with full log output (logs are silenced by default)
+- `npm run test-ai` - Test AI service connectivity and fallback functionality (hits real APIs)
 - `npm run verify` - Verify configuration and environment variables
 
 PM2 process management:
@@ -23,94 +26,59 @@ Database management:
 - `npm run clean` - Delete SQLite database
 - `npm run reset` - Clean database and restart
 
+CI runs lint + tests on Node 24 (`.github/workflows/ci.yml`).
+
+## Project Layout
+
+All application code lives under `src/` (CommonJS, no build step). `bot.js` at the repo root is the only entry point; Docker/PM2 configs reference it.
+
+- `src/app.js` - Composition root: service init, middleware registration (order matters), command loading, graceful shutdown, process error handlers
+- `src/config/index.js` - Centralized env config; modules must NOT read `process.env` directly (standalone scripts in `scripts/` may)
+- `src/config/constants.js` - All tunable numbers (limits, TTLs, throttle windows)
+- `src/commands/` - One module per command exporting `{ command, description, handler }`; `index.js` holds the explicit registry (keep alphabetical so help output stays stable)
+- `src/middleware/` - duplicateGuard, inputValidation, security (rate limit/user validation), commandThrottle, messageListener, logging
+- `src/services/` - aiService (+ `ai/` submodules), cacheService, chatPermissionService, messageStore (SQLite), taskQueue
+- `src/services/summaryDelivery/` - summary result delivery: `summarySender` (4-level Markdown fallback ladder + segmented sending), `taskQueueHandler` (thin event dispatcher), `errorClassification`, `errorMessages`, `retry`, `textSegmenter`
+- `src/telegram/` - Telegraf-facing helpers: commandParser, error identification (`errors.js`), safe send wrappers (`safety.js`, marks send-restricted chats)
+- `src/utils/` - logger (supports LOG_LEVEL env), markdown tools, summaryFormatter, validation, admin gate, commandRegistry
+
+Layering: config is imported by everything; utils must not import services; `src/telegram/safety.js` wraps `chatPermissionService` by design (telegram layer sits above services); commands must not import middleware (shared helpers live in `src/utils/validation.js`). Do not introduce utils→services or commands→middleware imports.
+
 ## Architecture Overview
 
-### Core Design Pattern
-This is a Telegram bot with an event-driven, middleware-based architecture featuring:
+**AI Service with fallback**
+- Primary → fallback auto-switching with 20s/30s timeouts (`src/services/aiService.js`)
+- Pipeline: language detection → token truncation → prompts → strict `json_schema` request → JSON parse with repair fallbacks → Markdown rendering
+- Client init in `src/services/ai/clientFactory.js`
 
-**Entry Point (`bot.js`)**
-- Main application entry with service initialization
-- Middleware registration in specific order (security, validation, logging, etc.)
-- Graceful shutdown handling with resource cleanup
+**Async task processing**
+- `/summary` submits to a serial `TaskQueue` (one summary at a time); results cached, `taskCompleted`/`taskFailed` events consumed by `taskQueueHandler`, which delivers via `summarySender`
+- The processing message is edited in place; message linkage kept in cache under `task_message_<id>` (15-min TTL)
 
-**AI Service with Fallback System**
-The bot implements a resilient AI service pattern:
-- **Primary API**: OpenAI-compatible API (configurable)
-- **Fallback API**: OpenAI-compatible API (configurable)
-- **Auto-switching**: Automatically falls back to the backup API if the primary fails
-- **Service Class**: `AIService` in `services/aiService.js` manages both clients
-- **Client Factory**: `services/ai/clientFactory.js` initializes AI clients
+**Summary delivery contract (do not break)**
+- 4-level Markdown fallback: raw → escaped (`smartEscapeMarkdown`) → `safeMarkdownProcess` → plain text; triggered only by Telegram 400 "can't parse entities" errors
+- Responses > 3500 chars are segmented at ~3200 chars; the stats block is separated by splitting on the literal `\n\n📊` emitted by `formatSummaryResponse` — this marker is load-bearing
+- First segment edits the original message with a `(1/N)` suffix; later segments are new messages; final fallback is a truncated 3400-char message
 
-### Key Service Layers
+**Middleware order** (registered in `src/app.js`): duplicateGuard → requestLogger → inputValidation → userValidator → rateLimiter → summary command throttle → messageStore → groupStatus → chatTypeLogger → messageStats → commandLogger
 
-**Asynchronous Task Processing**
-- `TaskQueue` class handles long-running AI summarization tasks
-- Event-driven architecture with `TaskQueueHandler` for UI updates
-- Prevents blocking the main thread during AI processing
+**Storage**
+- SQLite via `sqlite3`: messages table with `UNIQUE(message_id, chat_id)`; retention: >7 days or beyond newest 2000 per chat, cleaned every 6h
+- `node-cache` in `services/cacheService.js`: summary (MD5 keys + per-chat index), stats, user/custom caches; per-user-per-chat 5-min summary cooldown
 
-**Multi-layered Middleware Stack**
-Applied in this order:
-1. `duplicateGuard` - Prevents duplicate message processing
-2. `inputValidation` - Input sanitization and validation
-3. `security` middleware - Rate limiting, user validation, content filtering
-4. `commandThrottle` - Command-specific throttling (e.g., /summary)
-5. `messageListener` - Message storage, group monitoring, statistics
-6. `logging` - Request and command logging
-
-**Command System**
-- Auto-loading command modules from `commands/` directory
-- Each command exports: `command`, `handler`, and `description`
-- Dynamic command registration via `commands/index.js`
-
-### Data Layer
-- **Message Storage**: SQLite database via `storage/messageStore.js`
-- **Caching**: In-memory caching via `services/cacheService.js`
-- **Statistics**: Message and user activity tracking
-
-### AI Processing Pipeline
-1. Language detection for appropriate response formatting
-2. Token limit management and text truncation
-3. System and user prompt building with context
-4. Structured JSON response formatting
-5. Fallback parsing and error recovery
+**Intentional behaviors** (full list in docs/KNOWN-ISSUES.md): summary cache invalidated by any new group message; layered rate controls (10 req/min global, 3s /summary throttle, 5-min per-user-per-chat cooldown — refunded automatically when the task fails); usernames stored verbatim and escaped at render time; zh/zh-tw detection is a char-count heuristic.
 
 ## Configuration Requirements
 
-### Environment Variables
-Required for AI functionality:
-- `BOT_TOKEN` - Telegram bot token
-- `PRIMARY_API_KEY` - Primary OpenAI-compatible API key
-- `PRIMARY_API_BASE_URL` - Optional primary API base URL
-- `PRIMARY_MODEL` - Primary model name
-- `FALLBACK_API_KEY` - Fallback OpenAI-compatible API key
-- `FALLBACK_API_BASE_URL` - Optional fallback API base URL
-- `FALLBACK_MODEL` - Fallback model name
+Environment variables (documented in `env.example`, parsed once in `src/config/index.js`):
+- `BOT_TOKEN` (required), `ADMIN_USER_IDS` (comma-separated; unset = no admins)
+- `PRIMARY_API_KEY` / `PRIMARY_API_BASE_URL` / `PRIMARY_MODEL`
+- `FALLBACK_API_KEY` / `FALLBACK_API_BASE_URL` / `FALLBACK_MODEL`
+- `DATABASE_PATH` (default `storage/messages.db`), `LOG_LEVEL` (debug/info/warn/error)
 
-### PM2 Deployment
-- Configuration in `ecosystem.config.js`
-- Memory limit: 512MB with automatic restart
-- Logging to `logs/` directory
-- Supports both development and production environments
+## Testing Guidelines
 
-## Key Patterns to Follow
-
-**Error Handling**
-- All services implement comprehensive error handling with fallback mechanisms
-- Graceful degradation when AI services are unavailable
-- Structured error reporting with context
-
-**Security**
-- Rate limiting (10 requests per minute per user)
-- Input validation and sanitization
-- Content filtering for inappropriate messages
-- Markdown escaping for safe output
-
-**Async Processing**
-- Long-running tasks use the TaskQueue system
-- Event-driven updates for user feedback
-- Non-blocking architecture for responsive bot interaction
-
-**Resource Management**
-- Automatic cleanup of expired tasks and cache entries
-- Memory limits and monitoring
-- Graceful shutdown with proper resource cleanup
+- Tests live in `tests/` mirroring `src/`; Jest with node environment
+- Pure helpers are tested directly; commands/middleware use `jest.mock` on the singleton service modules
+- `messageStore` tests run against a real temp SQLite file
+- When fixing a bug, add a regression test; when refactoring, run `npm test` and `npm run lint` before finishing
