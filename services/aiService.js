@@ -7,7 +7,7 @@ const logger = require('../utils/logger');
 const { AI_LIMITS } = require('../config/constants');
 const { initPrimaryClient, initFallbackClient } = require('./ai/clientFactory');
 const { buildSystemPrompt, buildUserPrompt, buildResponseFormat } = require('./ai/promptBuilder');
-const { cleanJsonContent, repairTruncatedJson, extractSummaryFromFailedJson, formatStructuredSummary } = require('./ai/responseHandler');
+const { parseSummaryResponse } = require('./ai/responseHandler');
 const { detectLanguage } = require('./ai/languageDetector');
 const { truncateToTokenLimit, makeSafeUserName } = require('./ai/utils');
 
@@ -18,34 +18,46 @@ class AIService {
     this.isInitialized = false;
   }
 
-  async withTimeout(promise, timeoutMs, label) {
-    if (!timeoutMs) {
-      return promise;
-    }
-
+  async requestCompletion(client, request, label, maxRetries) {
+    const timeoutMs = AI_LIMITS.REQUEST_TIMEOUT_MS;
+    const controller = new AbortController();
+    const body = {
+      ...request,
+      max_tokens: AI_LIMITS.MAX_OUTPUT_TOKENS,
+      reasoning_effort: AI_LIMITS.REASONING_EFFORT
+    };
     let timeoutId;
     const timeoutPromise = new Promise((_, reject) => {
       timeoutId = setTimeout(() => {
         const error = new Error(`${label} request timeout after ${timeoutMs}ms`);
         error.code = 'AI_REQUEST_TIMEOUT';
         reject(error);
+        controller.abort();
       }, timeoutMs);
     });
 
     try {
-      return await Promise.race([promise, timeoutPromise]);
+      return await Promise.race([
+        client.chat.completions.create(body, {
+          signal: controller.signal,
+          timeout: timeoutMs,
+          maxRetries
+        }),
+        timeoutPromise
+      ]);
     } finally {
       clearTimeout(timeoutId);
     }
   }
 
-  ensureResponseContent(response, label) {
+  getResponseContent(response, label) {
     const content = response?.choices?.[0]?.message?.content;
-    if (!content || !content.trim()) {
+    if (typeof content !== 'string' || !content.trim()) {
       const error = new Error(`${label} returned empty content`);
       error.code = 'AI_EMPTY_RESPONSE';
       throw error;
     }
+    return content;
   }
 
   getPrimaryModel() {
@@ -77,101 +89,101 @@ class AIService {
   }
 
   /**
-   * 使用主要 API 生成内容，失败时自动切换到备用 API
+   * 使用主备 API 生成内容，摘要请求须通过解析才算成功
    * @param {Object} options - 生成选项
+   * @param {string} [detectedLanguage] - 摘要语言，普通内容生成无需提供
    * @returns {Object} 生成结果
    */
-  async generateContentWithFallback(options) {
+  async generateContentWithFallback(options, detectedLanguage) {
     this.ensureInitialized();
 
-    // 首先尝试主要 API
-    try {
-      if (!this.primaryClient) {
-        throw new Error('主要 API 未配置');
+    const isSummary = detectedLanguage !== undefined;
+    const routes = [
+      {
+        name: 'primary',
+        label: '主要 API',
+        client: this.primaryClient,
+        model: this.getPrimaryModel()
+      },
+      {
+        name: 'fallback',
+        label: '备用 API',
+        client: this.fallbackClient,
+        model: this.getFallbackModel()
       }
-      logger.info('尝试使用主要 API 生成内容');
-      
-      const primaryOptions = {
-        model: this.getPrimaryModel(),
+    ];
+    const errors = {};
+
+    for (const { name, label, client, model } of routes) {
+      if (!client) {
+        continue;
+      }
+
+      const request = {
+        model,
         messages: options.messages,
-        max_tokens: options.max_tokens,
         temperature: options.temperature,
         top_p: options.top_p
       };
-
       if (options.response_format) {
-        primaryOptions.response_format = options.response_format;
+        request.response_format = options.response_format;
       }
 
-      const response = await this.withTimeout(
-        this.primaryClient.chat.completions.create(primaryOptions),
-        AI_LIMITS.PRIMARY_TIMEOUT_MS,
-        'Primary API'
-      );
-      this.ensureResponseContent(response, 'Primary API');
-      
-      logger.success('主要 API 调用成功');
-      return {
-        ...response,
-        modelUsed: 'primary',
-        modelName: this.getPrimaryModel()
-      };
-
-    } catch (primaryError) {
-      logger.warn('主要 API 调用失败，尝试备用 API', {
-        error: primaryError.message,
-        stack: primaryError.stack
-      });
-
-      // 如果主要 API 失败，尝试备用 API
-      if (!this.fallbackClient) {
-        logger.error('备用 API 未配置，无法进行故障转移');
-        throw new Error('主要 API 调用失败且备用 API 未配置');
-      }
-
+      const startedAt = performance.now();
+      logger.info(`尝试使用${label} 生成内容`, { model, timeoutMs: AI_LIMITS.REQUEST_TIMEOUT_MS });
+      let response;
       try {
-        logger.info('尝试使用备用 API 生成内容');
-        
-        const fallbackOptions = {
-          model: this.getFallbackModel(),
-          messages: options.messages,
-          max_tokens: options.max_tokens,
-          temperature: options.temperature,
-          top_p: options.top_p
-        };
+        response = await this.requestCompletion(client, request, label, isSummary ? 0 : undefined);
 
-        if (options.response_format) {
-          fallbackOptions.response_format = options.response_format;
+        const content = this.getResponseContent(response, label);
+        const parsedSummary = isSummary ? parseSummaryResponse(content, detectedLanguage) : undefined;
+        if (isSummary && !parsedSummary) {
+          const error = new Error(`${label} returned no usable summary`);
+          error.code = 'AI_INVALID_SUMMARY';
+          throw error;
         }
 
-        const response = await this.withTimeout(
-          this.fallbackClient.chat.completions.create(fallbackOptions),
-          AI_LIMITS.FALLBACK_TIMEOUT_MS,
-          'Fallback API'
-        );
-        this.ensureResponseContent(response, 'Fallback API');
-        
-        logger.success('备用 API 调用成功');
+        logger.success(`${label} 调用成功`, {
+          elapsedMs: Math.round(performance.now() - startedAt),
+          model: response.model || model,
+          finishReason: response.choices[0].finish_reason,
+          usage: response.usage
+        });
         return {
           ...response,
-          modelUsed: 'fallback',
-          modelName: this.getFallbackModel(),
-          primaryError: primaryError.message
+          ...parsedSummary,
+          modelUsed: name,
+          modelName: model,
+          ...(name === 'fallback' && { primaryError: errors.primary?.message ?? '主要 API 未配置' })
         };
-
-      } catch (fallbackError) {
-        logger.error('备用 API 也调用失败', {
-          primaryError: primaryError.message,
-          fallbackError: fallbackError.message
+      } catch (error) {
+        errors[name] = error;
+        logger.warn(`${label} 调用失败`, {
+          elapsedMs: Math.round(performance.now() - startedAt),
+          finishReason: response?.choices?.[0]?.finish_reason,
+          error: error.message,
+          code: error.code,
+          status: error.status
         });
-
-        // 如果两个 API 都失败，抛出包含详细信息的错误
-        const error = new Error('所有 AI API 都不可用');
-        error.primaryError = primaryError;
-        error.fallbackError = fallbackError;
-        throw error;
       }
     }
+
+    const failures = Object.values(errors);
+    let message = this.fallbackClient ? '所有 AI API 都不可用' : '主要 API 调用失败且备用 API 未配置';
+    let code;
+    if (isSummary && failures.length > 0 && failures.every(error => error.code === 'AI_REQUEST_TIMEOUT')) {
+      message = '总结生成超时';
+      code = 'AI_REQUEST_TIMEOUT';
+    } else if (isSummary && failures.some(error => ['AI_INVALID_SUMMARY', 'AI_EMPTY_RESPONSE'].includes(error.code))) {
+      message = 'AI 未返回可用的总结';
+      code = 'AI_INVALID_SUMMARY';
+    }
+
+    const error = new Error(message);
+    error.code = code;
+    error.primaryError = errors.primary ?? new Error('主要 API 未配置');
+    error.fallbackError = errors.fallback;
+    throw error;
   }
 
   /**
@@ -231,8 +243,6 @@ class AIService {
       const systemPrompt = buildSystemPrompt(detectedLanguage);
       const userPrompt = buildUserPrompt(truncatedText, stats, userInfo, messages.length, detectedLanguage);
 
-      const responseFormat = buildResponseFormat(detectedLanguage);
-
       const inputLength = systemPrompt.length + userPrompt.length;
       logger.info('AI调用参数', {
         inputLength,
@@ -240,66 +250,14 @@ class AIService {
         messagesCount: messages.length
       });
 
-      const response = await this.generateContentWithFallback({
+      const { summary, structuredData, usage } = await this.generateContentWithFallback({
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        max_tokens: AI_LIMITS.MAX_OUTPUT_TOKENS,
         temperature: 0.7,
-        response_format: responseFormat
-      });
-
-      let rawContent = response.choices[0]?.message?.content;
-      let finishReason = response.choices[0]?.finish_reason;
-      
-      logger.info('AI响应详情', {
-        contentLength: rawContent?.length || 0,
-        finishReason: finishReason,
-        usage: response.usage,
-        modelUsed: response.modelUsed,
-        contentPreview: rawContent?.substring(0, 200) || 'null'
-      });
-      
-      if (!rawContent || rawContent.trim() === '') {
-        logger.error('AI响应内容为空', { response, finishReason });
-        throw new Error('未获得有效的总结结果 - AI返回空内容');
-      }
-
-      // 记录是否被截断（但不进行重试）
-      if (finishReason === 'length') {
-        logger.warn('AI输出因长度限制被截断，但保持使用完整聊天记录', {
-          contentLength: rawContent.length,
-          inputLength: inputLength,
-          messagesCount: messages.length
-        });
-      }
-
-      let structuredResult;
-      try {
-        structuredResult = JSON.parse(rawContent);
-      } catch (parseError) {
-        logger.warn('结构化响应解析失败，尝试清理JSON格式', { error: parseError.message });
-        
-        try {
-          const cleanedContent = cleanJsonContent(rawContent);
-          structuredResult = JSON.parse(cleanedContent);
-          logger.info('JSON清理成功，解析通过');
-        } catch (cleanError) {
-          logger.warn('JSON清理仍然失败，使用纯文本回退', cleanError);
-          const extractedSummary = extractSummaryFromFailedJson(rawContent);
-          
-          structuredResult = {
-            main_topics: [],
-            discussion_points: [],
-            activity_analysis: '',
-            special_events: '',
-            other_notes: extractedSummary
-          };
-        }
-      }
-
-      const summary = formatStructuredSummary(structuredResult, detectedLanguage);
+        response_format: buildResponseFormat(detectedLanguage)
+      }, detectedLanguage);
 
       logger.info('消息总结生成成功');
 
@@ -313,8 +271,8 @@ class AIService {
             latest: stats.latest_message
           },
           topUsers: validTopUsers.slice(0, 5),
-          tokensUsed: response.usage?.total_tokens || 0,
-          structuredData: structuredResult
+          tokensUsed: usage?.total_tokens || 0,
+          structuredData
         }
       };
 
@@ -369,17 +327,12 @@ class AIService {
 
     if (this.primaryClient) {
       try {
-        const response = await this.withTimeout(
-          this.primaryClient.chat.completions.create({
-            model: this.getPrimaryModel(),
-            messages: [
-              { role: 'user', content: '请回复"连接测试成功"' }
-            ],
-            max_tokens: 50
-          }),
-          AI_LIMITS.PRIMARY_TIMEOUT_MS,
-          'Primary API'
-        );
+        const response = await this.requestCompletion(this.primaryClient, {
+          model: this.getPrimaryModel(),
+          messages: [
+            { role: 'user', content: '请回复"连接测试成功"' }
+          ]
+        }, 'Primary API');
 
         const content = response?.choices?.[0]?.message?.content?.trim();
         if (!content) {
@@ -399,17 +352,12 @@ class AIService {
 
     if (this.fallbackClient) {
       try {
-        const response = await this.withTimeout(
-          this.fallbackClient.chat.completions.create({
-            model: this.getFallbackModel(),
-            messages: [
-              { role: 'user', content: '请回复"连接测试成功"' }
-            ],
-            max_tokens: 50
-          }),
-          AI_LIMITS.FALLBACK_TIMEOUT_MS,
-          'Fallback API'
-        );
+        const response = await this.requestCompletion(this.fallbackClient, {
+          model: this.getFallbackModel(),
+          messages: [
+            { role: 'user', content: '请回复"连接测试成功"' }
+          ]
+        }, 'Fallback API');
 
         const content = response?.choices?.[0]?.message?.content?.trim();
         if (!content) {

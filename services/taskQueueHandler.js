@@ -815,6 +815,10 @@ ${errorMessage}
    * 格式化错误消息
    */
   formatErrorMessage(error) {
+    if (error?.code === 'AI_REQUEST_TIMEOUT') {
+      return '❌ 总结生成超时\n\nAI 未在等待时限内返回总结，请稍后重试。';
+    }
+
     // 检查是否是内容过滤错误
     if (this.isContentFilterError(error)) {
       return this.getContentFilterMessage();

@@ -100,7 +100,7 @@ const summaryCommand = async (ctx) => {
     const processingMessage = await safeReply(ctx, `🔄 正在分析群组消息...
 
 📊 准备总结最近 ${messageCount} 条消息
-⏳ 预计需要 ${SUMMARY_LIMITS.PROCESSING_ESTIMATE_SECONDS} 秒，请稍候...`);
+⏳ 完成后会在这里更新结果。`);
 
     if (!processingMessage) {
       logger.warn('无法发送处理中提示消息，summary 命令提前结束', {
@@ -288,17 +288,6 @@ const summaryCommand = async (ctx) => {
         stats,
         topUsers: usersList,
         messageCount
-      });
-
-      // 立即回复用户，保持原有风格
-      await safeEditMessageText(ctx, `🔄 正在分析群组消息...
-
-📊 准备总结最近 ${messageCount} 条消息
-⏳ 预计需要 ${SUMMARY_LIMITS.PROCESSING_ESTIMATE_SECONDS} 秒，请稍候...
-
-💭 正在处理中，稍后自动更新结果...`, {
-        message_id: processingMessage.message_id,
-        disable_web_page_preview: true
       });
 
       // 存储消息ID以便后续更新

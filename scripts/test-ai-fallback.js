@@ -48,7 +48,6 @@ async function testAIFallback() {
     try {
       const response = await aiService.generateContentWithFallback({
         messages: testMessages,
-        max_tokens: 100,
         temperature: 0.7,
         top_p: 0.9
       });
