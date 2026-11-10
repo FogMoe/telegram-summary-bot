@@ -56,14 +56,12 @@ function buildSystemPrompt(detectedLanguage = 'zh') {
 Requirements:
 1. Respond in ${languageName}.
 2. Provide an objective and accurate summary highlighting main topics and key discussion points.
-3. Respect user privacy.
-4. Keep the summary concise and focused.
-5. Keep the summary under 4000 characters.
-6. Output valid JSON only. Do not wrap in code fences.
-7. Include all five fields. Use a list of concise strings for main_topics.
-   Write discussion_points as a single string with one or more short paragraphs separated by blank lines.
+3. Keep the summary concise and focused.
+4. Keep the summary under 4000 characters.
+5. Output valid JSON only. Do not wrap in code fences.
+6. Include all five fields. Write main_topics and discussion_points as lists of concise strings.
    Use an empty string for activity_analysis, special_events, or other_notes when there is nothing relevant to report.
-8. Field values must be plain text without Markdown or special formatting.`;
+7. Field values must be plain text without Markdown or special formatting.`;
 }
 
 function resolveLanguageName(detectedLanguage = 'zh') {
@@ -116,7 +114,7 @@ Generate a structured summary of the main topics and key discussions. Include im
 function buildResponseFormat(detectedLanguage = 'zh') {
   const desc = {
     main_topics: 'List of main topics',
-    discussion_points: 'Important discussion points as one or more paragraphs separated by blank lines',
+    discussion_points: 'List of important discussion points',
     activity_analysis: 'Group activity analysis',
     special_events: 'Special events or decisions',
     other_notes: 'Other notes'
@@ -136,7 +134,8 @@ function buildResponseFormat(detectedLanguage = 'zh') {
             description: desc.main_topics
           },
           discussion_points: {
-            type: "string",
+            type: "array",
+            items: { type: "string" },
             description: desc.discussion_points
           },
           activity_analysis: {

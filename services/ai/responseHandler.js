@@ -89,9 +89,13 @@ function formatStructuredSummary(structuredResult, detectedLanguage = 'zh') {
   }
 
   // 重要讨论点
-  const discussionPoints = normalizeList(structuredResult.discussion_points).join('\n\n');
-  if (discussionPoints) {
-    formattedSummary += `${template.discussionPoints}\n${discussionPoints}\n\n`;
+  const discussionPoints = normalizeList(structuredResult.discussion_points);
+  if (discussionPoints.length > 0) {
+    formattedSummary += `${template.discussionPoints}\n`;
+    discussionPoints.forEach(point => {
+      formattedSummary += `• ${point}\n`;
+    });
+    formattedSummary += '\n';
   }
 
   // 群组活跃度分析
